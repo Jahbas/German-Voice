@@ -108,7 +108,7 @@ Execute in a Roblox executor. GUI appears automatically showing all players and 
 
 Tested and supported on:
 
-![Xeno Logo](assets/xeno.png) **[Xeno](https://www.xeno.onl/)** - Fully tested and recommended executor
+<img src="assets/xeno.png" alt="Xeno" width="20" height="20"> **[Xeno](https://www.xeno.onl/)** - Fully tested and recommended executor
 
 ## Roadmap
 
