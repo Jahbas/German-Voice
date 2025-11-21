@@ -112,10 +112,12 @@ Tested and supported on:
 
 ## Roadmap
 
-Future features planned for upcoming releases.
+Future features planned for upcoming releases:
+
+- Interactive Trees Function: Toggle for interactive tree functionality in settings.
 
 ## Version
 
-Current Version: 0.9.3beta
+Current Version: 1.0.0release
 
 Includes automatic version checking with notifications for updates or when newer versions are running.

@@ -2,7 +2,7 @@
 -- Displays all players' TipJarStats.Donated values in a scrollable list
 
 -- Version system to ensure only one instance runs at a time
-local SCRIPT_VERSION = "0.9.3beta"
+local SCRIPT_VERSION = "1.0.0release"
 
 -- Function to compare version strings (e.g., "0.5beta" vs "0.6beta" or "0.5.1beta")
 local function compareVersions(version1, version2)
@@ -3801,10 +3801,12 @@ createPlayerInfoUI = function(targetPlayer, options)
     -- Create info frame
     local infoFrame = Instance.new("Frame")
     infoFrame.Name = "PlayerInfo_" .. targetPlayer.Name
-    infoFrame.Size = UDim2.new(0, 350, 0, 500)
-    infoFrame.Position = playerInfoTargetPosition
+    local startPosition = UDim2.new(1, 20, 0, playerInfoTargetPosition.Y.Offset)
+    infoFrame.Size = UDim2.new(0, 0, 0, 500)
+    infoFrame.Position = startPosition
     infoFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     infoFrame.BorderSizePixel = 0
+    infoFrame.BackgroundTransparency = 0
     infoFrame.Visible = true
     infoFrame.Parent = screenGui
     infoFrame.ZIndex = 10
@@ -5030,17 +5032,39 @@ createPlayerInfoUI = function(targetPlayer, options)
     local contentSize = statsListLayout.AbsoluteContentSize
     statsList.CanvasSize = UDim2.new(0, 0, 0, contentSize.Y + 10)
     
-    -- Animate in
-    infoFrame.Size = UDim2.new(0, 0, 0, 0)
-    infoFrame.Position = playerInfoTargetPosition
-    infoFrame.BackgroundTransparency = 1
+    -- Animate in with smooth animation
+    -- Set border transparency for animation
+    if infoBorder then
+        infoBorder.Transparency = 1
+    end
     
-    local openTween = TweenService:Create(
+    -- Use a single combined tween for smoother animation with optimized settings
+    local combinedTween = TweenService:Create(
         infoFrame,
-        TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-        {Size = UDim2.new(0, 350, 0, 500), Position = playerInfoTargetPosition, BackgroundTransparency = 0}
+        TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0),
+        {
+            Size = UDim2.new(0, 350, 0, 500),
+            Position = playerInfoTargetPosition
+        }
     )
-    openTween:Play()
+    
+    local borderTween = nil
+    if infoBorder then
+        borderTween = TweenService:Create(
+            infoBorder,
+            TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0),
+            {Transparency = 0.2}
+        )
+    end
+    
+    -- Play animations with slight delay to ensure frame is ready
+    task.spawn(function()
+        task.wait(0.01)
+        combinedTween:Play()
+        if borderTween then
+            borderTween:Play()
+        end
+    end)
     
     return infoFrame
 end
