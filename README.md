@@ -104,11 +104,15 @@ Utilizes multiple Roblox services including Players, TweenService, RunService, W
 
 Execute in a Roblox executor. GUI appears automatically showing all players and tip statistics. Use search to filter, click players for info panels, and access settings via settings button.
 
+## Supported Executors
+
+Tested and supported on:
+
+<img src="https://www.xeno.onl/favicon.ico" alt="Xeno" width="16" height="16"> **[Xeno](https://www.xeno.onl/)** - Fully tested and recommended executor
+
 ## Roadmap
 
-Future features:
-
-- Report Bug Button: Quick access in settings to report bugs with Discord contact.
+Future features planned for upcoming releases.
 
 ## Version
 
