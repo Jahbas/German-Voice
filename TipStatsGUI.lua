@@ -2,7 +2,7 @@
 -- Displays all players' TipJarStats.Donated values in a scrollable list
 
 -- Version system to ensure only one instance runs at a time
-local SCRIPT_VERSION = "1.0.0release"
+local SCRIPT_VERSION = "1.1.0release"
 
 -- Function to compare version strings (e.g., "0.5beta" vs "0.6beta" or "0.5.1beta")
 local function compareVersions(version1, version2)
@@ -908,14 +908,14 @@ local function monitorDonations()
             ensureTipJarTrackingFunc(player)
         end
         spawn(function()
-            local tipJarStats = player:FindFirstChild("TipJarStats")
+            tipJarStats = player:FindFirstChild("TipJarStats")
             if not tipJarStats then
                 tipJarStats = player:WaitForChild("TipJarStats", 10)
             end
             
             if tipJarStats then
                 -- Monitor Received/Raised value
-                local received = tipJarStats.Raised
+                received = tipJarStats.Raised
                 if not received then
                     received = tipJarStats:FindFirstChild("Raised")
                 end
@@ -926,32 +926,32 @@ local function monitorDonations()
                     
                     -- Listen for changes
                     received:GetPropertyChangedSignal("Value"):Connect(function()
-                        local currentReceived = received.Value
-                        local previousReceivedValue = previousReceived[player.UserId] or currentReceived
+                        currentReceived = received.Value
+                        previousReceivedValue = previousReceived[player.UserId] or currentReceived
                         
                         if currentReceived > previousReceivedValue then
-                            local increase = currentReceived - previousReceivedValue
+                            increase = currentReceived - previousReceivedValue
                             if increase > 0 then
                                 print("Donation detected! Receiver:", player.Name, "Increase:", increase)
                                 
                                 -- Try to find the donator
-                                local donatorFound = nil
+                                donatorFound = nil
                                 
                                 for _, donator in ipairs(Players:GetPlayers()) do
                                     if donator ~= player then
-                                        local donatorTipJarStats = donator:FindFirstChild("TipJarStats")
+                                        donatorTipJarStats = donator:FindFirstChild("TipJarStats")
                                         if donatorTipJarStats then
-                                            local donatorDonated = donatorTipJarStats.Donated
+                                            donatorDonated = donatorTipJarStats.Donated
                                             if not donatorDonated then
                                                 donatorDonated = donatorTipJarStats:FindFirstChild("Donated")
                                             end
                                             
                                             if donatorDonated and (donatorDonated:IsA("IntValue") or donatorDonated:IsA("NumberValue")) then
-                                                local donatorCurrentDonated = donatorDonated.Value
-                                                local donatorPreviousDonated = previousDonations[donator.UserId] or donatorCurrentDonated
+                                                donatorCurrentDonated = donatorDonated.Value
+                                                donatorPreviousDonated = previousDonations[donator.UserId] or donatorCurrentDonated
                                                 
                                                 if donatorCurrentDonated > donatorPreviousDonated then
-                                                    local donatorIncrease = donatorCurrentDonated - donatorPreviousDonated
+                                                    donatorIncrease = donatorCurrentDonated - donatorPreviousDonated
                                                     if math.abs(donatorIncrease - increase) <= 1 then
                                                         donatorFound = donator
                                                         previousDonations[donator.UserId] = donatorCurrentDonated
@@ -963,13 +963,11 @@ local function monitorDonations()
                                     end
                                 end
                                 
-                                -- Show notification
+                                -- Log donation (notification removed due to local variable limit)
                                 if donatorFound then
-                                    print("Found donator:", donatorFound.Name)
-                                    showDonationNotification(donatorFound.DisplayName or donatorFound.Name, tostring(increase), player.DisplayName or player.Name)
+                                    print("TipStatsGUI: Donation detected -", donatorFound.Name, "donated", increase, "to", player.Name)
                                 else
-                                    print("Donator not found, showing 'Someone'")
-                                    showDonationNotification("Someone", tostring(increase), player.DisplayName or player.Name)
+                                    print("TipStatsGUI: Donation detected - Someone donated", increase, "to", player.Name)
                                 end
                                 
                                 -- Update stored value
@@ -983,7 +981,7 @@ local function monitorDonations()
                 end
                 
                 -- Monitor Donated value for tracking
-                local donated = tipJarStats.Donated
+                donated = tipJarStats.Donated
                 if not donated then
                     donated = tipJarStats:FindFirstChild("Donated")
                 end
@@ -1011,15 +1009,17 @@ local function monitorDonations()
         setupPlayerMonitoring(player)
     end)
     
-    -- Clean up when players leave
+    -- Clean up when players leave and log their departure
     Players.PlayerRemoving:Connect(function(player)
         previousDonations[player.UserId] = nil
         previousReceived[player.UserId] = nil
+        -- Log player leaving in their profile
+        logPlayerLeaving(player)
     end)
 end
 
--- Create ScreenGui - first destroy any existing one from old instances
-local coreGui = nil
+-- Create ScreenGui - first destroy any existing one from old instances (using globals to reduce local register usage)
+coreGui = nil
 pcall(function()
     coreGui = game:GetService("CoreGui")
 end)
@@ -1029,7 +1029,7 @@ if not coreGui then
     return
 end
 
-local existingScreenGui = coreGui:FindFirstChild("TipStatsGUI")
+existingScreenGui = coreGui:FindFirstChild("TipStatsGUI")
 if existingScreenGui then
     pcall(function()
         existingScreenGui:Destroy()
@@ -1037,7 +1037,7 @@ if existingScreenGui then
     task.wait(0.1) -- Wait a moment for cleanup
 end
 
-local screenGui = Instance.new("ScreenGui")
+screenGui = Instance.new("ScreenGui")
 screenGui.Name = "TipStatsGUI"
 screenGui.ResetOnSpawn = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
@@ -1046,14 +1046,14 @@ pcall(function()
 end)
 
 -- Store original sizes and states
-local originalSize = UDim2.new(0, 500, 0, 600)
-local minimizedSize = UDim2.new(0, 500, 0, 45)
-local isMinimized = false
-local isClosed = false
-local playerInfoTargetPosition = UDim2.new(1, -20, 0, 80)
+originalSize = UDim2.new(0, 500, 0, 600)
+minimizedSize = UDim2.new(0, 500, 0, 45)
+isMinimized = false
+isClosed = false
+playerInfoTargetPosition = UDim2.new(1, -20, 0, 80)
 
 -- Create Main Frame
-local mainFrame = Instance.new("Frame")
+mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
 mainFrame.Size = originalSize
 mainFrame.Position = UDim2.new(0.5, -250, 0.5, -300)
@@ -1062,19 +1062,19 @@ mainFrame.BorderSizePixel = 0
 mainFrame.Parent = screenGui
 
 -- Add corner radius
-local corner = Instance.new("UICorner")
+corner = Instance.new("UICorner")
 corner.CornerRadius = UDim.new(0, 10)
 corner.Parent = mainFrame
 
 -- Add subtle border
-local mainBorder = Instance.new("UIStroke")
+mainBorder = Instance.new("UIStroke")
 mainBorder.Color = Color3.fromRGB(50, 50, 50)
 mainBorder.Thickness = 1
 mainBorder.Transparency = 0.2
 mainBorder.Parent = mainFrame
 
 -- Create Title Bar
-local titleBar = Instance.new("Frame")
+titleBar = Instance.new("Frame")
 titleBar.Name = "TitleBar"
 titleBar.Size = UDim2.new(1, 0, 0, 45)
 titleBar.Position = UDim2.new(0, 0, 0, 0)
@@ -1082,12 +1082,12 @@ titleBar.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 titleBar.BorderSizePixel = 0
 titleBar.Parent = mainFrame
 
-local titleCorner = Instance.new("UICorner")
+titleCorner = Instance.new("UICorner")
 titleCorner.CornerRadius = UDim.new(0, 10)
 titleCorner.Parent = titleBar
 
 -- Add subtle border to title bar
-local titleBorder = Instance.new("UIStroke")
+titleBorder = Instance.new("UIStroke")
 titleBorder.Color = Color3.fromRGB(60, 60, 60)
 titleBorder.Thickness = 1
 titleBorder.Transparency = 0.3
@@ -1286,23 +1286,19 @@ local settingsState = {
     disableHoverOutline = false,
     toggleKeyCode = Enum.KeyCode.V,
     hoverRange = 20,
+    buildPlayerProfile = false,
 }
 
--- Settings persistence system
-local SETTINGS_STORAGE_NAME = "TipStatsGUI_Settings"
-local settingsStorage = nil
+-- Settings persistence system (using executor workspace folder)
+local SETTINGS_FILENAME = "TipStatsGUI_Settings.json"
 
--- Function to save settings to ReplicatedStorage
+-- Function to save settings to executor workspace folder
 local function saveSettings()
     pcall(function()
-        if not settingsStorage then
-            -- Create or get settings storage
-            settingsStorage = ReplicatedStorage:FindFirstChild(SETTINGS_STORAGE_NAME)
-            if not settingsStorage then
-                settingsStorage = Instance.new("StringValue")
-                settingsStorage.Name = SETTINGS_STORAGE_NAME
-                settingsStorage.Parent = ReplicatedStorage
-            end
+        -- Check if executor file I/O functions are available
+        if not writefile then
+            warn("TipStatsGUI: writefile function not available. Settings cannot be saved to workspace folder.")
+            return
         end
         
         -- Convert settings to a saveable format
@@ -1314,79 +1310,741 @@ local function saveSettings()
             disableHoverOutline = settingsState.disableHoverOutline,
             hoverRange = settingsState.hoverRange,
             toggleKeyCodeName = settingsState.toggleKeyCode and settingsState.toggleKeyCode.Name or nil,
+            buildPlayerProfile = settingsState.buildPlayerProfile,
         }
         
-        -- Encode to JSON and save
+        -- Encode to JSON
         local success, jsonString = pcall(function()
             return HttpService:JSONEncode(settingsToSave)
         end)
         
-        if success and jsonString then
-            settingsStorage.Value = jsonString
-            print("TipStatsGUI: Settings saved")
+        if not success or not jsonString then
+            warn("TipStatsGUI: Failed to encode settings to JSON")
+            return
+        end
+        
+        -- Save to workspace folder
+        local writeSuccess, writeError = pcall(function()
+            writefile(SETTINGS_FILENAME, jsonString)
+        end)
+        
+        if writeSuccess then
+            print("TipStatsGUI: Settings saved to workspace folder: " .. SETTINGS_FILENAME)
+            
+            -- Debug: Verify file was saved
+            if isfile then
+                task.wait(0.1) -- Small delay to ensure file is written
+                if isfile(SETTINGS_FILENAME) then
+                    print("TipStatsGUI: [DEBUG] Verified - Settings file exists in workspace folder")
+                    
+                    -- Debug: Read back and verify content
+                    local verifySuccess, verifyContent = pcall(function()
+                        if readfile then
+                            return readfile(SETTINGS_FILENAME)
+                        end
+                        return nil
+                    end)
+                    
+                    if verifySuccess and verifyContent == jsonString then
+                        print("TipStatsGUI: [DEBUG] Verified - Settings file content matches saved data")
+                    elseif verifySuccess then
+                        warn("TipStatsGUI: [DEBUG] WARNING - Settings file content does not match!")
+                    end
+                else
+                    warn("TipStatsGUI: [DEBUG] WARNING - Settings file not found after save!")
+                end
+            end
         else
-            warn("TipStatsGUI: Failed to encode settings")
+            warn("TipStatsGUI: Failed to save settings to workspace folder. Error: " .. tostring(writeError))
         end
     end)
 end
 
--- Function to load settings from ReplicatedStorage
+-- Function to load settings from executor workspace folder
 local function loadSettings()
     pcall(function()
-        settingsStorage = ReplicatedStorage:FindFirstChild(SETTINGS_STORAGE_NAME)
-        if not settingsStorage then
-            -- No saved settings, use defaults
+        -- Check if executor file I/O functions are available
+        if not readfile or not isfile then
+            print("TipStatsGUI: readfile/isfile functions not available. Using default settings.")
             return
         end
         
-        if settingsStorage.Value == "" or settingsStorage.Value == nil then
-            -- No saved data
+        -- Check if settings file exists
+        if not isfile(SETTINGS_FILENAME) then
+            print("TipStatsGUI: No settings file found in workspace folder. Using default settings.")
             return
         end
         
-        -- Decode JSON
-        local success, settingsData = pcall(function()
-            return HttpService:JSONDecode(settingsStorage.Value)
+        print("TipStatsGUI: [DEBUG] Settings file found in workspace folder: " .. SETTINGS_FILENAME)
+        
+        -- Read file content
+        local success, fileContent = pcall(function()
+            return readfile(SETTINGS_FILENAME)
         end)
         
-        if not success or not settingsData then
-            warn("TipStatsGUI: Failed to decode settings")
+        if not success or not fileContent or fileContent == "" then
+            warn("TipStatsGUI: Failed to read settings file or file is empty")
             return
         end
         
+        print("TipStatsGUI: [DEBUG] Successfully read settings file. Content length: " .. tostring(#fileContent) .. " characters")
+        
+        -- Decode JSON
+        local decodeSuccess, settingsData = pcall(function()
+            return HttpService:JSONDecode(fileContent)
+        end)
+        
+        if not decodeSuccess or not settingsData then
+            warn("TipStatsGUI: Failed to decode settings JSON")
+            return
+        end
+        
+        print("TipStatsGUI: [DEBUG] Successfully decoded settings JSON")
+        
         -- Load settings
+        local loadedCount = 0
         if settingsData.showLocationHubButton ~= nil then
             settingsState.showLocationHubButton = settingsData.showLocationHubButton
+            loadedCount = loadedCount + 1
         end
         if settingsData.hideAllTipJars ~= nil then
             settingsState.hideAllTipJars = settingsData.hideAllTipJars
+            loadedCount = loadedCount + 1
         end
         if settingsData.disableAltRequirement ~= nil then
             settingsState.disableAltRequirement = settingsData.disableAltRequirement
+            loadedCount = loadedCount + 1
         end
         if settingsData.disableHoverInfo ~= nil then
             settingsState.disableHoverInfo = settingsData.disableHoverInfo
+            loadedCount = loadedCount + 1
         end
         if settingsData.disableHoverOutline ~= nil then
             settingsState.disableHoverOutline = settingsData.disableHoverOutline
+            loadedCount = loadedCount + 1
         end
         if settingsData.hoverRange ~= nil then
             settingsState.hoverRange = math.max(20, math.min(100, settingsData.hoverRange))
+            loadedCount = loadedCount + 1
         end
         if settingsData.toggleKeyCodeName then
             -- Convert key name back to KeyCode
             local keyCode = Enum.KeyCode[settingsData.toggleKeyCodeName]
             if keyCode then
                 settingsState.toggleKeyCode = keyCode
+                loadedCount = loadedCount + 1
             end
         end
+        if settingsData.buildPlayerProfile ~= nil then
+            settingsState.buildPlayerProfile = settingsData.buildPlayerProfile
+            loadedCount = loadedCount + 1
+        end
         
-        print("TipStatsGUI: Settings loaded")
+        print("TipStatsGUI: Settings loaded from workspace folder. Loaded " .. tostring(loadedCount) .. " setting(s)")
     end)
 end
 
 -- Load settings on startup
 loadSettings()
+
+-- Player Profile System
+local playerChatMessages = {} -- Store chat messages by player name
+local lastLoggedMessages = {} -- Track last logged message per player to prevent duplicates
+local PROFILE_BASE_FOLDER = "Players"
+
+-- Function to ensure Players folder exists
+local function ensurePlayersFolder()
+    if not writefile then
+        return false
+    end
+    
+    -- Try using makefolder if available (some executors like Synapse X support this)
+    if makefolder then
+        local success, err = pcall(function()
+            makefolder(PROFILE_BASE_FOLDER)
+        end)
+        if success then
+            return true
+        end
+    end
+    
+    -- Fallback: Try creating folder by writing a test file in it
+    -- Some executors auto-create folders when you write to a path with "/"
+    local testFile = PROFILE_BASE_FOLDER .. "/.test"
+    local success, err = pcall(function()
+        writefile(testFile, "test")
+    end)
+    
+    if success then
+        task.wait(0.1)
+        if isfile and isfile(testFile) then
+            -- Clean up test file (silent)
+            pcall(function()
+                if delfile then
+                    delfile(testFile)
+                end
+            end)
+            return true
+        end
+    end
+    
+    warn("TipStatsGUI: [Profile] Could not create Players folder. Error: " .. tostring(err))
+    return false
+end
+
+-- Function to get current timestamp in ISO format
+local function getCurrentTimestamp()
+    local dateTable = os.date("*t")
+    return string.format("%04d-%02d-%02dT%02d:%02d:%02d", 
+        dateTable.year, dateTable.month, dateTable.day,
+        dateTable.hour, dateTable.min, dateTable.sec)
+end
+
+-- Function to pretty-print JSON with indentation
+local function prettyPrintJSON(jsonString)
+    if not jsonString then
+        return ""
+    end
+    
+    local result = ""
+    local indent = 0
+    local indentStr = "  " -- 2 spaces per indent level
+    local inString = false
+    local escapeNext = false
+    
+    for i = 1, #jsonString do
+        local char = jsonString:sub(i, i)
+        
+        if escapeNext then
+            result = result .. char
+            escapeNext = false
+        elseif char == "\\" then
+            result = result .. char
+            escapeNext = true
+        elseif char == '"' then
+            result = result .. char
+            inString = not inString
+        elseif inString then
+            result = result .. char
+        elseif char == "{" or char == "[" then
+            result = result .. char
+            indent = indent + 1
+            result = result .. "\n" .. string.rep(indentStr, indent)
+        elseif char == "}" or char == "]" then
+            indent = indent - 1
+            result = result .. "\n" .. string.rep(indentStr, indent) .. char
+        elseif char == "," then
+            result = result .. char
+            result = result .. "\n" .. string.rep(indentStr, indent)
+        elseif char == ":" then
+            result = result .. char .. " "
+        elseif char == " " or char == "\n" or char == "\t" then
+            -- Skip whitespace outside strings
+        else
+            result = result .. char
+        end
+    end
+    
+    return result
+end
+
+-- Function to collect all player profile data
+local function collectPlayerProfileData(player)
+    if not player or not player.Parent then
+        return nil
+    end
+    
+    local profileData = {
+        timestamp = getCurrentTimestamp(),
+        userId = player.UserId,
+        displayName = player.DisplayName or player.Name,
+        username = player.Name,
+        stats = {},
+        settings = {},
+        backpack = {},
+        gamepasses = {},
+        chat = {}
+    }
+    
+    -- Collect TipJarStats
+    local tipJarStats = player:FindFirstChild("TipJarStats")
+    if tipJarStats then
+        local donated = tipJarStats.Donated or tipJarStats:FindFirstChild("Donated")
+        local received = tipJarStats.Raised or tipJarStats:FindFirstChild("Raised")
+        
+        if donated and (donated:IsA("IntValue") or donated:IsA("NumberValue")) then
+            profileData.stats.donated = donated.Value
+        else
+            profileData.stats.donated = 0
+        end
+        
+        if received and (received:IsA("IntValue") or received:IsA("NumberValue")) then
+            profileData.stats.received = received.Value
+        else
+            profileData.stats.received = 0
+        end
+    else
+        profileData.stats.donated = 0
+        profileData.stats.received = 0
+    end
+    
+    -- Collect Playtime (Minutes)
+    local minutes = nil
+    local directMinutes = player:FindFirstChild("Minutes")
+    if directMinutes then
+        minutes = directMinutes
+    else
+        local leaderstats = player:FindFirstChild("leaderstats")
+        if leaderstats then
+            minutes = leaderstats:FindFirstChild("Minutes")
+        end
+    end
+    
+    if minutes and (minutes:IsA("IntValue") or minutes:IsA("NumberValue")) then
+        profileData.stats.playtime = minutes.Value
+    else
+        profileData.stats.playtime = 0
+    end
+    
+    -- Collect Credits
+    local credits = player:FindFirstChild("Credits")
+    if credits and (credits:IsA("IntValue") or credits:IsA("NumberValue")) then
+        profileData.stats.credits = credits.Value
+    else
+        profileData.stats.credits = 0
+    end
+    
+    -- Collect Settings
+    local settings = player:FindFirstChild("Settings")
+    if settings then
+        local function getSettingValue(name)
+            local setting = settings[name] or settings:FindFirstChild(name)
+            if setting and setting:IsA("BoolValue") then
+                return setting.Value
+            end
+            return nil
+        end
+        
+        profileData.settings.auras = getSettingValue("Auras")
+        profileData.settings.gifts = getSettingValue("Gifts")
+        profileData.settings.piano = getSettingValue("Piano")
+        profileData.settings.rank = getSettingValue("Rank")
+        profileData.settings.shadow = getSettingValue("Shadow")
+        profileData.settings.teleport = getSettingValue("Teleport")
+        profileData.settings.time = getSettingValue("Time")
+    end
+    
+    -- Collect Backpack Items
+    local backpack = player:FindFirstChild("Backpack")
+    if backpack then
+        for _, item in ipairs(backpack:GetChildren()) do
+            if item:IsA("Tool") or item:IsA("HopperBin") then
+                table.insert(profileData.backpack, {
+                    name = item.Name,
+                    class = item.ClassName
+                })
+            end
+        end
+        -- Sort by name
+        table.sort(profileData.backpack, function(a, b)
+            return a.name < b.name
+        end)
+    end
+    
+    -- Collect Gamepasses
+    local userGamepasses = player:FindFirstChild("UserCreatedGamepasses")
+    if userGamepasses then
+        for _, gamepassFolder in ipairs(userGamepasses:GetChildren()) do
+            if gamepassFolder:IsA("Folder") then
+                local gamepassId = gamepassFolder.Name
+                local gamepassName = nil
+                local gamepassPrice = nil
+                
+                local nameChild = gamepassFolder:FindFirstChild("Name")
+                if nameChild then
+                    if nameChild:IsA("StringValue") then
+                        gamepassName = nameChild.Value
+                    elseif nameChild:IsA("ValueBase") then
+                        gamepassName = tostring(nameChild.Value)
+                    end
+                end
+                
+                local priceChild = gamepassFolder:FindFirstChild("Price")
+                if priceChild then
+                    if priceChild:IsA("IntValue") or priceChild:IsA("NumberValue") then
+                        gamepassPrice = priceChild.Value
+                    elseif priceChild:IsA("StringValue") then
+                        gamepassPrice = tonumber(priceChild.Value)
+                    end
+                end
+                
+                table.insert(profileData.gamepasses, {
+                    id = gamepassId,
+                    name = gamepassName,
+                    price = gamepassPrice
+                })
+            end
+        end
+        -- Sort by name or ID
+        table.sort(profileData.gamepasses, function(a, b)
+            local nameA = a.name or a.id
+            local nameB = b.name or b.id
+            return nameA < nameB
+        end)
+    end
+    
+    -- Collect Chat Messages for this player and format them by day/time
+    if playerChatMessages[player.Name] then
+        local rawMessages = playerChatMessages[player.Name]
+        
+        -- Function to extract date and time from timestamp
+        local function parseTimestamp(ts)
+            if not ts then return nil, nil end
+            local datePart, timePart = ts:match("^(%d%d%d%d%-%d%d%-%d%d)T(%d%d:%d%d:%d%d)$")
+            return datePart, timePart
+        end
+        
+        -- Organize messages by date
+        local messagesByDate = {}
+        for _, msg in ipairs(rawMessages) do
+            local date, time = parseTimestamp(msg.timestamp)
+            if date then
+                if not messagesByDate[date] then
+                    messagesByDate[date] = {}
+                end
+                table.insert(messagesByDate[date], {
+                    time = time or "00:00:00",
+                    sender = msg.sender or player.Name,
+                    recipient = msg.recipient,
+                    content = msg.content or ""
+                })
+            end
+        end
+        
+        -- Sort messages within each date by time
+        for date, messages in pairs(messagesByDate) do
+            table.sort(messages, function(a, b)
+                return (a.time or "") < (b.time or "")
+            end)
+        end
+        
+        -- Convert to array format sorted by date (newest first)
+        local sortedDates = {}
+        for date in pairs(messagesByDate) do
+            table.insert(sortedDates, date)
+        end
+        table.sort(sortedDates, function(a, b)
+            return a > b -- Newest first
+        end)
+        
+        -- Format as readable structure
+        profileData.chat = {
+            format = "grouped_by_date",
+            messages = {}
+        }
+        
+        for _, date in ipairs(sortedDates) do
+            table.insert(profileData.chat.messages, {
+                date = date,
+                messages = messagesByDate[date]
+            })
+        end
+    else
+        profileData.chat = {
+            format = "grouped_by_date",
+            messages = {}
+        }
+    end
+    
+    return profileData
+end
+
+-- Function to save player profile to workspace folder
+local function savePlayerProfile(player, profileData)
+    if not writefile or not isfile or not readfile then
+        warn("TipStatsGUI: File I/O functions not available. Cannot save player profile.")
+        return false
+    end
+    
+    if not profileData then
+        warn("TipStatsGUI: No profile data to save for player: " .. tostring(player and player.Name or "unknown"))
+        return false
+    end
+    
+    -- Ensure Players folder exists (required - no fallback to root)
+    local playerName = player.Name
+    
+    if not ensurePlayersFolder() then
+        warn("TipStatsGUI: [Profile] Failed to create Players folder. Cannot save profile for: " .. playerName)
+        return false
+    end
+    
+    -- Use folder path: Players/PlayerName.json
+    local profileFile = PROFILE_BASE_FOLDER .. "/" .. playerName .. ".json"
+    
+    -- Read existing profile if it exists
+    local existingEntries = {}
+    if isfile(profileFile) then
+        local success, fileContent = pcall(function()
+            return readfile(profileFile)
+        end)
+        
+        if success and fileContent and fileContent ~= "" then
+            local decodeSuccess, decoded = pcall(function()
+                return HttpService:JSONDecode(fileContent)
+            end)
+            if decodeSuccess and decoded and type(decoded) == "table" then
+                existingEntries = decoded
+            end
+        end
+    end
+    
+    -- Append new entry
+    table.insert(existingEntries, profileData)
+    
+    -- Encode and save
+    local success, jsonString = pcall(function()
+        return HttpService:JSONEncode(existingEntries)
+    end)
+    
+    if not success or not jsonString then
+        warn("TipStatsGUI: Failed to encode profile data for player: " .. playerName)
+        return false
+    end
+    
+    -- Pretty-print JSON for readability
+    local formattedJSON = prettyPrintJSON(jsonString)
+    
+    -- Save to file (silent to reduce console spam)
+    local writeSuccess, writeError = pcall(function()
+        writefile(profileFile, formattedJSON)
+    end)
+    
+    if writeSuccess then
+        -- Verify file was created
+        task.wait(0.1)
+        if isfile(profileFile) then
+            return true
+        else
+            warn("TipStatsGUI: [Profile] Write reported success but file not found: " .. profileFile)
+            return false
+        end
+    else
+        warn("TipStatsGUI: [Profile] Failed to save profile for: " .. playerName .. " - " .. tostring(writeError))
+        return false
+    end
+end
+
+-- Function to load player profile
+local function loadPlayerProfile(player)
+    if not readfile or not isfile then
+        return nil
+    end
+    
+    local playerName = player.Name
+    -- Only use folder path: Players/PlayerName.json
+    local profileFile = PROFILE_BASE_FOLDER .. "/" .. playerName .. ".json"
+    
+    if not isfile(profileFile) then
+        return nil
+    end
+    
+    local success, fileContent = pcall(function()
+        return readfile(profileFile)
+    end)
+    
+    if not success or not fileContent or fileContent == "" then
+        return nil
+    end
+    
+    local decodeSuccess, profileEntries = pcall(function()
+        return HttpService:JSONDecode(fileContent)
+    end)
+    
+    if decodeSuccess and profileEntries and type(profileEntries) == "table" then
+        return profileEntries
+    end
+    
+    return nil
+end
+
+-- Function to log player leaving
+local function logPlayerLeaving(player)
+    if not settingsState.buildPlayerProfile then
+        return
+    end
+    
+    if not writefile or not isfile or not readfile then
+        return
+    end
+    
+    local playerName = player.Name
+    local profileFile = PROFILE_BASE_FOLDER .. "/" .. playerName .. ".json"
+    
+    -- Read existing profile
+    local existingEntries = {}
+    if isfile(profileFile) then
+        local success, fileContent = pcall(function()
+            return readfile(profileFile)
+        end)
+        
+        if success and fileContent and fileContent ~= "" then
+            local decodeSuccess, decoded = pcall(function()
+                return HttpService:JSONDecode(fileContent)
+            end)
+            if decodeSuccess and decoded and type(decoded) == "table" then
+                existingEntries = decoded
+            end
+        end
+    end
+    
+    -- Add "player left" entry
+    local leaveEntry = {
+        timestamp = getCurrentTimestamp(),
+        event = "player_left",
+        userId = player.UserId,
+        displayName = player.DisplayName or player.Name,
+        username = player.Name
+    }
+    
+    table.insert(existingEntries, leaveEntry)
+    
+    -- Save updated profile
+    local success, jsonString = pcall(function()
+        return HttpService:JSONEncode(existingEntries)
+    end)
+    
+    if success and jsonString then
+        -- Pretty-print JSON for readability
+        local formattedJSON = prettyPrintJSON(jsonString)
+        local writeSuccess = pcall(function()
+            writefile(profileFile, formattedJSON)
+        end)
+        if writeSuccess then
+            -- Silent - no console spam
+        end
+    end
+end
+
+-- Function to update all player profiles
+local function updateAllPlayerProfiles()
+    if not settingsState.buildPlayerProfile then
+        return
+    end
+    
+    if not writefile then
+        return
+    end
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player and player.Parent then
+            local profileData = collectPlayerProfileData(player)
+            if profileData then
+                savePlayerProfile(player, profileData)
+            end
+        end
+    end
+end
+
+-- Profile update system: snapshot on join + periodic updates
+local profileUpdateConnection = nil
+local profilePeriodicUpdate = nil
+
+local function startProfileUpdateSystem()
+    if not settingsState.buildPlayerProfile then
+        return
+    end
+    
+    -- Take snapshot of all existing players immediately when enabled
+    task.spawn(function()
+        -- Create profiles instantly for all players in lobby
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player and player.Parent then
+                task.spawn(function()
+                    -- Small delay per player to avoid overwhelming the system
+                    task.wait(0.1)
+                    local profileData = collectPlayerProfileData(player)
+                    if profileData then
+                        savePlayerProfile(player, profileData)
+                    end
+                end)
+            end
+        end
+    end)
+    
+    -- Hook into player join events
+    if not profileUpdateConnection then
+        profileUpdateConnection = Players.PlayerAdded:Connect(function(player)
+            if settingsState.buildPlayerProfile then
+                -- Wait a bit for player data to load
+                task.spawn(function()
+                    task.wait(3)
+                    if player and player.Parent then
+                        local profileData = collectPlayerProfileData(player)
+                        if profileData then
+                            savePlayerProfile(player, profileData)
+                        end
+                    end
+                end)
+            end
+        end)
+    end
+    
+    -- Set up periodic updates (every 60 seconds)
+    if profilePeriodicUpdate then
+        profilePeriodicUpdate:Disconnect()
+    end
+    
+    local lastUpdateTime = tick()
+    profilePeriodicUpdate = RunService.Heartbeat:Connect(function()
+        local currentTime = tick()
+        if currentTime - lastUpdateTime >= 60 then
+            lastUpdateTime = currentTime
+            if settingsState.buildPlayerProfile then
+                updateAllPlayerProfiles()
+            end
+        end
+    end)
+    
+    -- Profile system started (silent to reduce console spam)
+end
+
+local function stopProfileUpdateSystem()
+    if profileUpdateConnection then
+        profileUpdateConnection:Disconnect()
+        profileUpdateConnection = nil
+    end
+    
+    if profilePeriodicUpdate then
+        profilePeriodicUpdate:Disconnect()
+        profilePeriodicUpdate = nil
+    end
+    
+    -- Profile system stopped (silent to reduce console spam)
+end
+
+-- Start profile system if enabled on load - create profiles immediately
+task.spawn(function()
+    task.wait(0.5) -- Small delay to ensure everything is loaded
+    if settingsState.buildPlayerProfile then
+        startProfileUpdateSystem()
+        -- Also create profiles immediately for all current players
+        task.spawn(function()
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player and player.Parent then
+                    task.spawn(function()
+                        task.wait(0.2) -- Small stagger to avoid overwhelming
+                        local profileData = collectPlayerProfileData(player)
+                        if profileData then
+                            savePlayerProfile(player, profileData)
+                            -- Profile created (silent to reduce console spam)
+                        end
+                    end)
+                end
+            end
+        end)
+    end
+end)
 
 local hiddenTipJarData = {}
 local individualHideConnections = {}
@@ -2530,6 +3188,18 @@ local function toggleSettingsPanel()
     end)
     hidePlayersToggleButton = hidePlayersToggleBtn
     updateHidePlayersToggle = updateHidePlayersToggleFunc
+
+    createSettingsToggle(optionsContainer, "Build Player Profile", settingsState.buildPlayerProfile, function(state)
+        settingsState.buildPlayerProfile = state
+        saveSettings() -- Save settings when changed
+        if state then
+            -- Start profile building system
+            startProfileUpdateSystem()
+        else
+            -- Stop profile building system
+            stopProfileUpdateSystem()
+        end
+    end)
 
     createSettingsSlider(optionsContainer, "Hover Range", 20, 100, math.max(20, math.min(100, settingsState.hoverRange or 20)), function(value)
         settingsState.hoverRange = value
@@ -4620,6 +5290,379 @@ createPlayerInfoUI = function(targetPlayer, options)
         gamepassesContainer.Size = UDim2.new(1, 0, 0, math.max(contentSize.Y, 30))
     end
     
+    -- Profile History section header
+    local profileHistoryHeaderFrame = Instance.new("Frame")
+    profileHistoryHeaderFrame.Name = "ProfileHistoryHeader"
+    profileHistoryHeaderFrame.Size = UDim2.new(1, 0, 0, 35)
+    profileHistoryHeaderFrame.BackgroundTransparency = 1
+    profileHistoryHeaderFrame.LayoutOrder = 17
+    profileHistoryHeaderFrame.Parent = statsList
+    
+    local profileHistoryHeader = Instance.new("TextLabel")
+    profileHistoryHeader.Name = "HeaderText"
+    profileHistoryHeader.Size = UDim2.new(1, -20, 1, 0)
+    profileHistoryHeader.Position = UDim2.new(0, 10, 0, 0)
+    profileHistoryHeader.BackgroundTransparency = 1
+    profileHistoryHeader.Text = "Profile History"
+    profileHistoryHeader.TextColor3 = Color3.fromRGB(240, 240, 240)
+    profileHistoryHeader.TextSize = 16
+    profileHistoryHeader.Font = Enum.Font.GothamBold
+    profileHistoryHeader.TextXAlignment = Enum.TextXAlignment.Left
+    profileHistoryHeader.Parent = profileHistoryHeaderFrame
+    
+    -- Divider line for profile history section
+    local profileHistoryDivider = Instance.new("Frame")
+    profileHistoryDivider.Name = "Divider"
+    profileHistoryDivider.Size = UDim2.new(1, -20, 0, 1)
+    profileHistoryDivider.Position = UDim2.new(0, 10, 1, -1)
+    profileHistoryDivider.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    profileHistoryDivider.BorderSizePixel = 0
+    profileHistoryDivider.Parent = profileHistoryHeaderFrame
+    
+    -- Profile history container
+    local profileHistoryContainer = Instance.new("Frame")
+    profileHistoryContainer.Name = "ProfileHistoryContainer"
+    profileHistoryContainer.Size = UDim2.new(1, 0, 0, 0)
+    profileHistoryContainer.BackgroundTransparency = 1
+    profileHistoryContainer.LayoutOrder = 18
+    profileHistoryContainer.Parent = statsList
+    
+    local profileHistoryLayout = Instance.new("UIListLayout")
+    profileHistoryLayout.Padding = UDim.new(0, 5)
+    profileHistoryLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    profileHistoryLayout.Parent = profileHistoryContainer
+    
+    -- Function to format timestamp (remove T, show date on left, time on right)
+    local function formatTimestamp(timestamp)
+        if not timestamp then
+            return "Unknown", ""
+        end
+        -- Format: YYYY-MM-DDTHH:MM:SS -> "YYYY-MM-DD" and "HH:MM:SS"
+        local date, time = timestamp:match("^(%d%d%d%d%-%d%d%-%d%d)T(%d%d:%d%d:%d%d)$")
+        if date and time then
+            return date, time
+        end
+        -- Fallback if format doesn't match
+        return timestamp:gsub("T", " "), ""
+    end
+    
+    -- Function to compare two profile entries (only donated, received, playtime)
+    local function compareProfileEntries(entry1, entry2)
+        if not entry1 or not entry2 then
+            return {}
+        end
+        
+        local differences = {}
+        
+        -- Only compare stats (donated, received, playtime)
+        if entry1.stats and entry2.stats then
+            if entry1.stats.donated ~= entry2.stats.donated then
+                local diff = entry2.stats.donated - entry1.stats.donated
+                table.insert(differences, {
+                    type = "donated",
+                    label = "Donated",
+                    old = entry1.stats.donated,
+                    new = entry2.stats.donated,
+                    diff = diff
+                })
+            end
+            if entry1.stats.received ~= entry2.stats.received then
+                local diff = entry2.stats.received - entry1.stats.received
+                table.insert(differences, {
+                    type = "received",
+                    label = "Received",
+                    old = entry1.stats.received,
+                    new = entry2.stats.received,
+                    diff = diff
+                })
+            end
+            if entry1.stats.playtime ~= entry2.stats.playtime then
+                local diff = entry2.stats.playtime - entry1.stats.playtime
+                table.insert(differences, {
+                    type = "playtime",
+                    label = "Playtime",
+                    old = entry1.stats.playtime,
+                    new = entry2.stats.playtime,
+                    diff = diff
+                })
+            end
+        end
+        
+        return differences
+    end
+    
+    -- Function to update profile history display
+    local function updateProfileHistory()
+        -- Clear existing history
+        for _, child in ipairs(profileHistoryContainer:GetChildren()) do
+            if child:IsA("Frame") or child:IsA("TextLabel") then
+                child:Destroy()
+            end
+        end
+        
+        -- Load profile
+        local profileEntries = loadPlayerProfile(targetPlayer)
+        if not profileEntries or #profileEntries == 0 then
+            local noHistoryLabel = Instance.new("TextLabel")
+            noHistoryLabel.Name = "NoHistory"
+            noHistoryLabel.Size = UDim2.new(1, -20, 0, 30)
+            noHistoryLabel.Position = UDim2.new(0, 10, 0, 0)
+            noHistoryLabel.BackgroundTransparency = 1
+            noHistoryLabel.Text = "No profile history found"
+            noHistoryLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+            noHistoryLabel.TextSize = 12
+            noHistoryLabel.Font = Enum.Font.Gotham
+            noHistoryLabel.TextXAlignment = Enum.TextXAlignment.Left
+            noHistoryLabel.Parent = profileHistoryContainer
+            return
+        end
+        
+        -- Filter out entries without stats (like "player_left" events) - only show entries with stats
+        local statsEntries = {}
+        for _, entry in ipairs(profileEntries) do
+            if entry.stats and not entry.event then
+                table.insert(statsEntries, entry)
+            end
+        end
+        
+        if #statsEntries == 0 then
+            local noHistoryLabel = Instance.new("TextLabel")
+            noHistoryLabel.Name = "NoHistory"
+            noHistoryLabel.Size = UDim2.new(1, -20, 0, 30)
+            noHistoryLabel.Position = UDim2.new(0, 10, 0, 0)
+            noHistoryLabel.BackgroundTransparency = 1
+            noHistoryLabel.Text = "No profile history found"
+            noHistoryLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+            noHistoryLabel.TextSize = 12
+            noHistoryLabel.Font = Enum.Font.Gotham
+            noHistoryLabel.TextXAlignment = Enum.TextXAlignment.Left
+            noHistoryLabel.Parent = profileHistoryContainer
+            return
+        end
+        
+        -- Sort by timestamp (newest first)
+        table.sort(statsEntries, function(a, b)
+            return (a.timestamp or "") > (b.timestamp or "")
+        end)
+        
+        -- Filter to only show entries from different sessions
+        -- A new session is defined as: first entry, or entry with >5 minutes gap from previous
+        local sessionEntries = {}
+        local SESSION_GAP_MINUTES = 5
+        
+        for i, entry in ipairs(statsEntries) do
+            if i == 1 then
+                -- Always include the first (newest) entry
+                table.insert(sessionEntries, entry)
+            else
+                -- Check time gap from previous entry
+                local prevEntry = statsEntries[i - 1]
+                if prevEntry and prevEntry.timestamp and entry.timestamp then
+                    -- Parse timestamps: YYYY-MM-DDTHH:MM:SS and calculate gap in minutes
+                    local function getTimeInMinutes(ts)
+                        local datePart, timePart = ts:match("^(%d%d%d%d%-%d%d%-%d%d)T(%d%d:%d%d):%d%d$")
+                        if datePart and timePart then
+                            local hour, min = timePart:match("^(%d%d):(%d%d)$")
+                            if hour and min then
+                                -- Extract date components
+                                local year, month, day = datePart:match("^(%d%d%d%d)%-(%d%d)%-(%d%d)$")
+                                if year and month and day then
+                                    -- Simple calculation: convert to minutes since a reference
+                                    -- We'll use a simpler approach: compare dates and times separately
+                                    return {
+                                        date = datePart,
+                                        hour = tonumber(hour),
+                                        min = tonumber(min),
+                                        totalMinutes = (tonumber(hour) * 60) + tonumber(min)
+                                    }
+                                end
+                            end
+                        end
+                        return nil
+                    end
+                    
+                    local time1 = getTimeInMinutes(prevEntry.timestamp)
+                    local time2 = getTimeInMinutes(entry.timestamp)
+                    
+                    if time1 and time2 then
+                        -- If different dates, it's a new session
+                        if time1.date ~= time2.date then
+                            table.insert(sessionEntries, entry)
+                        else
+                            -- Same date, check time gap
+                            local gapMinutes = 0
+                            if time1.totalMinutes > time2.totalMinutes then
+                                gapMinutes = time1.totalMinutes - time2.totalMinutes
+                            else
+                                -- Handle day rollover (shouldn't happen with same date, but just in case)
+                                gapMinutes = (24 * 60) - time2.totalMinutes + time1.totalMinutes
+                            end
+                            
+                            -- If gap is more than SESSION_GAP_MINUTES, this is a new session
+                            if gapMinutes > SESSION_GAP_MINUTES then
+                                table.insert(sessionEntries, entry)
+                            end
+                        end
+                    else
+                        -- If parsing fails, include entry to be safe
+                        table.insert(sessionEntries, entry)
+                    end
+                else
+                    -- If no previous entry or missing timestamp, include this entry
+                    table.insert(sessionEntries, entry)
+                end
+            end
+        end
+        
+        -- Filter out entries with no meaningful changes
+        local meaningfulEntries = {}
+        for i, entry in ipairs(sessionEntries) do
+            if i == 1 then
+                -- Always include the first (newest) entry
+                table.insert(meaningfulEntries, entry)
+            else
+                -- Check if this entry has any changes compared to previous
+                local prevEntry = sessionEntries[i - 1]
+                local differences = compareProfileEntries(entry, prevEntry)
+                
+                -- Only include if there are actual changes
+                if #differences > 0 then
+                    table.insert(meaningfulEntries, entry)
+                end
+            end
+        end
+        
+        if #meaningfulEntries == 0 then
+            local noHistoryLabel = Instance.new("TextLabel")
+            noHistoryLabel.Name = "NoHistory"
+            noHistoryLabel.Size = UDim2.new(1, -20, 0, 30)
+            noHistoryLabel.Position = UDim2.new(0, 10, 0, 0)
+            noHistoryLabel.BackgroundTransparency = 1
+            noHistoryLabel.Text = "No profile history with changes found"
+            noHistoryLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+            noHistoryLabel.TextSize = 12
+            noHistoryLabel.Font = Enum.Font.Gotham
+            noHistoryLabel.TextXAlignment = Enum.TextXAlignment.Left
+            noHistoryLabel.Parent = profileHistoryContainer
+            return
+        end
+        
+        -- Show date buttons and comparison (only meaningful entries)
+        for i, entry in ipairs(meaningfulEntries) do
+            -- Check if this entry will have differences shown
+            local hasDifferences = false
+            if i < #meaningfulEntries then
+                local prevEntry = meaningfulEntries[i + 1]
+                local differences = compareProfileEntries(prevEntry, entry)
+                hasDifferences = #differences > 0
+            end
+            
+            local dateFrame = Instance.new("Frame")
+            dateFrame.Name = "DateEntry_" .. i
+            -- Reduced height for compact display
+            local baseHeight = hasDifferences and 36 or 28
+            dateFrame.Size = UDim2.new(1, -20, 0, baseHeight)
+            dateFrame.Position = UDim2.new(0, 10, 0, 0)
+            dateFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+            dateFrame.BorderSizePixel = 0
+            dateFrame.LayoutOrder = i
+            dateFrame.Parent = profileHistoryContainer
+            
+            local dateCorner = Instance.new("UICorner")
+            dateCorner.CornerRadius = UDim.new(0, 6)
+            dateCorner.Parent = dateFrame
+            
+            local dateBorder = Instance.new("UIStroke")
+            dateBorder.Color = Color3.fromRGB(60, 60, 60)
+            dateBorder.Thickness = 1
+            dateBorder.Transparency = 0.4
+            dateBorder.Parent = dateFrame
+            
+            -- Add padding to frame content - increased padding
+            local framePadding = Instance.new("UIPadding")
+            framePadding.PaddingLeft = UDim.new(0, 0)
+            framePadding.PaddingRight = UDim.new(0, 10)
+            framePadding.PaddingTop = UDim.new(0, 4)
+            framePadding.PaddingBottom = UDim.new(0, 4)
+            framePadding.Parent = dateFrame
+            
+            -- Format timestamp: date on left, time on right
+            local dateStr, timeStr = formatTimestamp(entry.timestamp)
+            
+            -- Date label (left side) - no left padding to prevent cutoff
+            local dateLabel = Instance.new("TextLabel")
+            dateLabel.Name = "DateLabel"
+            dateLabel.Size = UDim2.new(0.5, -5, 0, 16)
+            dateLabel.Position = UDim2.new(0, 10, 0, 0)
+            dateLabel.BackgroundTransparency = 1
+            dateLabel.Text = dateStr
+            dateLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+            dateLabel.TextSize = 12
+            dateLabel.Font = Enum.Font.Gotham
+            dateLabel.TextXAlignment = Enum.TextXAlignment.Left
+            dateLabel.Parent = dateFrame
+            
+            -- Time label (right side) - equal spacing on both sides
+            local timeLabel = Instance.new("TextLabel")
+            timeLabel.Name = "TimeLabel"
+            timeLabel.Size = UDim2.new(0.5, -5, 0, 16)
+            timeLabel.Position = UDim2.new(0.5, 0, 0, 0)
+            timeLabel.BackgroundTransparency = 1
+            timeLabel.Text = timeStr
+            timeLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+            timeLabel.TextSize = 12
+            timeLabel.Font = Enum.Font.Gotham
+            timeLabel.TextXAlignment = Enum.TextXAlignment.Right
+            timeLabel.TextTruncate = Enum.TextTruncate.AtEnd
+            timeLabel.Parent = dateFrame
+            
+            -- Show comparison if there's a previous entry
+            if i < #meaningfulEntries then
+                local prevEntry = meaningfulEntries[i + 1]
+                local differences = compareProfileEntries(prevEntry, entry)
+                
+                if #differences > 0 then
+                    local diffText = ""
+                    for j, diff in ipairs(differences) do
+                        if j > 1 then
+                            diffText = diffText .. ", "
+                        end
+                        if diff.type == "new_items" then
+                            diffText = diffText .. diff.label .. ": " .. table.concat(diff.items, ", ")
+                        else
+                            local sign = diff.diff > 0 and "+" or ""
+                            diffText = diffText .. diff.label .. ": " .. sign .. tostring(diff.diff) .. " (" .. tostring(diff.old) .. " → " .. tostring(diff.new) .. ")"
+                        end
+                    end
+                    
+                    local diffLabel = Instance.new("TextLabel")
+                    diffLabel.Name = "DiffLabel"
+                    diffLabel.Size = UDim2.new(1, 0, 0, 16)
+                    diffLabel.Position = UDim2.new(0, 10, 0, 16)
+                    diffLabel.BackgroundTransparency = 1
+                    diffLabel.Text = diffText
+                    diffLabel.TextColor3 = Color3.fromRGB(150, 200, 255)
+                    diffLabel.TextSize = 11
+                    diffLabel.Font = Enum.Font.Gotham
+                    diffLabel.TextXAlignment = Enum.TextXAlignment.Left
+                    diffLabel.TextWrapped = true
+                    diffLabel.Parent = dateFrame
+                    
+                    -- Compact height for entries with differences (kept same size)
+                    dateFrame.Size = UDim2.new(1, -20, 0, 36)
+                end
+            end
+        end
+        
+        -- Update container size
+        task.wait()
+        local contentSize = profileHistoryLayout.AbsoluteContentSize
+        profileHistoryContainer.Size = UDim2.new(1, 0, 0, math.max(contentSize.Y, 20))
+    end
+    
+    -- Update profile history on UI creation
+    updateProfileHistory()
+    
     -- Update functions
     local function updateReceived()
         -- First check if TipJar is in backpack
@@ -6590,6 +7633,9 @@ end)
 
 -- Listen for players leaving
 Players.PlayerRemoving:Connect(function(player)
+    -- Log player leaving in their profile
+    logPlayerLeaving(player)
+    
     -- Unspy if this player is being spied on
     if viewing == player then
         unspyPlayer()
@@ -6627,134 +7673,8 @@ end)
 -- Start monitoring donations
 monitorDonations()
 
--- Create separate ScreenGui for donation notifications (independent of main GUI)
-local donationNotificationGui = Instance.new("ScreenGui")
-donationNotificationGui.Name = "DonationNotificationGui"
-donationNotificationGui.ResetOnSpawn = false
-donationNotificationGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-pcall(function()
-    donationNotificationGui.Parent = game:GetService("CoreGui")
-end)
-
--- Function to show donation notification
-local function showDonationNotification(donatorName, amount, receiverName)
-    -- Find the donator player
-    local donatorPlayer = nil
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player.Name == donatorName or player.DisplayName == donatorName then
-            donatorPlayer = player
-            break
-        end
-    end
-    
-    -- Create notification frame
-    local notification = Instance.new("Frame")
-    notification.Name = "DonationNotification_" .. tick()
-    notification.Size = UDim2.new(0, 400, 0, 50)
-    notification.Position = UDim2.new(0.5, 0, 0, 15)
-    notification.AnchorPoint = Vector2.new(0.5, 0)
-    notification.BackgroundColor3 = Color3.fromRGB(40, 60, 40)
-    notification.BorderSizePixel = 0
-    notification.Parent = donationNotificationGui
-    notification.ZIndex = 20
-    
-    local notificationCorner = Instance.new("UICorner")
-    notificationCorner.CornerRadius = UDim.new(0, 8)
-    notificationCorner.Parent = notification
-    
-    local notificationBorder = Instance.new("UIStroke")
-    notificationBorder.Color = Color3.fromRGB(100, 200, 100)
-    notificationBorder.Thickness = 3
-    notificationBorder.Transparency = 0
-    notificationBorder.Parent = notification
-    
-    -- Donation icon/emoji
-    local iconLabel = Instance.new("TextLabel")
-    iconLabel.Name = "IconLabel"
-    iconLabel.Size = UDim2.new(0, 30, 0, 30)
-    iconLabel.Position = UDim2.new(0, 10, 0.5, -15)
-    iconLabel.AnchorPoint = Vector2.new(0, 0.5)
-    iconLabel.BackgroundTransparency = 1
-    iconLabel.Text = "💰"
-    iconLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
-    iconLabel.TextSize = 24
-    iconLabel.Font = Enum.Font.GothamBold
-    iconLabel.Parent = notification
-    
-    -- Notification text (adjusted to make room for button)
-    local textLabel = Instance.new("TextLabel")
-    textLabel.Name = "TextLabel"
-    textLabel.Size = UDim2.new(1, -90, 1, -10)
-    textLabel.Position = UDim2.new(0, 45, 0, 5)
-    textLabel.BackgroundTransparency = 1
-    textLabel.Text = donatorName .. " donated " .. amount .. " Robux to " .. receiverName .. "!"
-    textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    textLabel.TextSize = 14
-    textLabel.Font = Enum.Font.GothamBold
-    textLabel.TextXAlignment = Enum.TextXAlignment.Left
-    textLabel.TextWrapped = true
-    textLabel.Parent = notification
-    
-    -- Goto/Teleport button (same style as main UI) - positioned on the right
-    if donatorPlayer then
-        local gotoButton = Instance.new("TextButton")
-        gotoButton.Name = "GotoButton"
-        gotoButton.Size = UDim2.new(0, 30, 0, 30)
-        gotoButton.Position = UDim2.new(1, -10, 0.5, -15)
-        gotoButton.AnchorPoint = Vector2.new(1, 0.5)
-        gotoButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-        gotoButton.Text = "→"
-        gotoButton.TextColor3 = Color3.fromRGB(220, 220, 220)
-        gotoButton.TextSize = 16
-        gotoButton.Font = Enum.Font.GothamBold
-        gotoButton.BorderSizePixel = 0
-        gotoButton.Parent = notification
-        
-        local gotoCorner = Instance.new("UICorner")
-        gotoCorner.CornerRadius = UDim.new(0, 4)
-        gotoCorner.Parent = gotoButton
-        
-        -- Goto button hover effect
-        gotoButton.MouseEnter:Connect(function()
-            gotoButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-        end)
-        gotoButton.MouseLeave:Connect(function()
-            gotoButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-        end)
-        
-        -- Goto button click - teleport to donator
-        gotoButton.MouseButton1Click:Connect(function()
-            teleportToPlayer(donatorPlayer)
-        end)
-    end
-    
-    -- Animate in
-    notification.Size = UDim2.new(0, 0, 0, 50)
-    notification.BackgroundTransparency = 1
-    local slideTween = TweenService:Create(
-        notification,
-        TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-        {Size = UDim2.new(0, 400, 0, 50), BackgroundTransparency = 0}
-    )
-    slideTween:Play()
-    
-    -- Auto-hide after 6 seconds
-    task.delay(6, function()
-        if notification and notification.Parent then
-            local hideTween = TweenService:Create(
-                notification,
-                TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-                {Size = UDim2.new(0, 0, 0, 50), BackgroundTransparency = 1, Position = UDim2.new(0.5, 0, 0, 15)}
-            )
-            hideTween:Play()
-            hideTween.Completed:Connect(function()
-                if notification then
-                    notification:Destroy()
-                end
-            end)
-        end
-    end)
-end
+-- Donation notification function removed due to local variable limit issues
+-- Donations are now logged to console instead
 
 -- Setup respawn teleport handler
 local localPlayer = Players.LocalPlayer
@@ -6946,6 +7866,7 @@ spawn(function()
                     print("TipStatsGUI: Legacy chat received from local player:", message) -- Debug
                     checkAndExecute(message)
                 end
+                -- Note: Chat logging is handled by hookNewChat to avoid duplicates
             end
         end)
         print("TipStatsGUI: Hooked legacy chat for player:", player.Name)
@@ -6967,6 +7888,7 @@ spawn(function()
                 -- Try different ways to get the message text and sender
                 local messageText = nil
                 local sender = nil
+                local recipient = nil
                 
                 -- Method 1: message.Text and message.TextSource
                 if message.Text then
@@ -6982,15 +7904,41 @@ spawn(function()
                     messageText = message.Message
                 end
                 
-                if not sender and message.UserId then
-                    sender = Players:GetPlayerByUserId(message.UserId)
-                end
-                
                 -- Method 3: Try to get from TextSource properties
                 if not sender and message.TextSource then
                     local textSource = message.TextSource
                     if textSource.UserId then
                         sender = Players:GetPlayerByUserId(textSource.UserId)
+                    end
+                end
+                
+                -- Track chat message for profile system (all players) - only log once per message
+                if settingsState.buildPlayerProfile and sender and messageText then
+                    local playerName = sender.Name
+                    local currentTime = tick()
+                    local lastMessage = lastLoggedMessages[playerName]
+                    
+                    -- Check if this is a duplicate (same content within 0.5 seconds)
+                    local isDuplicate = false
+                    if lastMessage and lastMessage.content == messageText and (currentTime - lastMessage.time) < 0.5 then
+                        isDuplicate = true
+                    end
+                    
+                    if not isDuplicate then
+                        if not playerChatMessages[playerName] then
+                            playerChatMessages[playerName] = {}
+                        end
+                        table.insert(playerChatMessages[playerName], {
+                            sender = playerName,
+                            recipient = recipient,
+                            content = messageText,
+                            timestamp = getCurrentTimestamp()
+                        })
+                        -- Track this message to prevent duplicates
+                        lastLoggedMessages[playerName] = {
+                            content = messageText,
+                            time = currentTime
+                        }
                     end
                 end
                 
@@ -7043,11 +7991,23 @@ spawn(function()
         end
         legacyConnected = true
         local success, err = pcall(function()
-            -- Only hook legacy chat for local player
+            -- Hook legacy chat for local player (for commands)
             if chatLocalPlayer then
                 hookLegacyChat(chatLocalPlayer)
             end
-            -- Don't hook for other players - we only want local player commands
+            -- Also hook for all other players (for profile tracking)
+            if settingsState.buildPlayerProfile then
+                for _, player in ipairs(Players:GetPlayers()) do
+                    if player ~= chatLocalPlayer then
+                        hookLegacyChat(player)
+                    end
+                end
+                Players.PlayerAdded:Connect(function(player)
+                    if settingsState.buildPlayerProfile and player ~= chatLocalPlayer then
+                        hookLegacyChat(player)
+                    end
+                end)
+            end
         end)
         if success then
             print("TipStatsGUI: Legacy chat detection initialized")
@@ -7079,6 +8039,7 @@ spawn(function()
         pcall(function()
             player.Chatted:Connect(function(message)
                 if scriptRunning then
+                    -- Note: Chat logging is handled by hookNewChat to avoid duplicates
                     print("TipStatsGUI: Direct Chatted event received:", message) -- Debug
                     local executed = checkAndExecute(message)
                     if executed then
@@ -7226,15 +8187,5 @@ if Workspace:FindFirstChild("PlayerCharacters") then
     end)
 end
 
--- Notify user that AFK text will be broken
-task.wait(2) -- Wait for screenGui to be ready
-spawn(function()
-    if screenGui and screenGui.Parent then
-        createNotification(
-            "Tip Stats GUI",
-            "AFK tags have been disabled for all players to prevent AFK detection issues. This will break the AFK text display.",
-            "warning"
-        )
-    end
-end)
+-- AFK warning notification removed
 

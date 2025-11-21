@@ -96,6 +96,33 @@ Version tracking ensures only one script instance runs. When newer versions are 
 
 - Modern dark-themed design with rounded corners.
 
+- Profile history UI with compact, readable format showing date/time and statistic changes.
+
+### Player Profile System
+
+Comprehensive player data tracking and history:
+
+- **Build Player Profile**: Toggle setting to automatically collect and save player statistics
+- **Persistent Storage**: Saves player data to workspace folder in organized JSON files
+- **Profile History**: View historical snapshots of player statistics with date/time tracking
+- **Change Comparison**: Compare statistics between different sessions (donated, received, playtime changes)
+- **Chat Message Logging**: Automatically logs all chat messages organized by date and time
+- **Session Filtering**: Only shows profile entries from different sessions (filters out frequent updates)
+- **Human-Readable Format**: JSON files are pretty-printed with proper indentation for easy reading
+- **Chat Organization**: Chat messages grouped by date, sorted by time within each day
+
+Profile data includes:
+- TipJarStats (Donated, Received/Raised)
+- Playtime (Minutes)
+- Credits
+- Settings (Auras, Gifts, Piano, Rank, Shadow, Teleport, Time)
+- Backpack items
+- Gamepasses
+- Chat messages (organized by date/time)
+- Player join/leave events
+
+Data is saved to `Players/[PlayerName].json` in the workspace folder for permanent storage.
+
 ## Technical Details
 
 Utilizes multiple Roblox services including Players, TweenService, RunService, Workspace, TextService, HttpService, TextChatService, MarketplaceService, ReplicatedStorage, TeleportService, UserInputService, and GuiService. Implements connection tracking, error handling with pcall, and efficient PropertyChangedSignal updates. Data persists through Roblox storage. Cleanup functions restore all modified game state.
@@ -118,6 +145,6 @@ Future features planned for upcoming releases:
 
 ## Version
 
-Current Version: 1.0.0release
+Current Version: 1.1.0release
 
 Includes automatic version checking with notifications for updates or when newer versions are running.
