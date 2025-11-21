@@ -121,7 +121,7 @@ Profile data includes:
 - Chat messages (organized by date/time)
 - Player join/leave events
 
-Data is saved to `Players/[PlayerName].json` in the workspace folder for permanent storage.
+Data is saved to `Players/[PlayerName]/profile.json` and `Players/[PlayerName]/messages.json` in the workspace folder for permanent storage. Chat messages are stored separately to reduce lag when saving profiles.
 
 ## Technical Details
 
@@ -145,6 +145,6 @@ Future features planned for upcoming releases:
 
 ## Version
 
-Current Version: 1.1.0release
+Current Version: 1.2.0release
 
 Includes automatic version checking with notifications for updates or when newer versions are running.

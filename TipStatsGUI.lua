@@ -2,7 +2,7 @@
 -- Displays all players' TipJarStats.Donated values in a scrollable list
 
 -- Version system to ensure only one instance runs at a time
-local SCRIPT_VERSION = "1.1.0release"
+local SCRIPT_VERSION = "1.2.0release"
 
 -- Function to compare version strings (e.g., "0.5beta" vs "0.6beta" or "0.5.1beta")
 local function compareVersions(version1, version2)
@@ -1492,6 +1492,52 @@ local function ensurePlayersFolder()
     return false
 end
 
+-- Function to ensure player subfolder exists (Players/PlayerName/)
+local function ensurePlayerSubfolder(playerName)
+    if not writefile then
+        return false
+    end
+    
+    -- First ensure base Players folder exists
+    if not ensurePlayersFolder() then
+        return false
+    end
+    
+    local playerFolder = PROFILE_BASE_FOLDER .. "/" .. playerName
+    
+    -- Try using makefolder if available
+    if makefolder then
+        local success, err = pcall(function()
+            makefolder(playerFolder)
+        end)
+        if success then
+            return true
+        end
+    end
+    
+    -- Fallback: Try creating folder by writing a test file in it
+    local testFile = playerFolder .. "/.test"
+    local success, err = pcall(function()
+        writefile(testFile, "test")
+    end)
+    
+    if success then
+        task.wait(0.1)
+        if isfile and isfile(testFile) then
+            -- Clean up test file (silent)
+            pcall(function()
+                if delfile then
+                    delfile(testFile)
+                end
+            end)
+            return true
+        end
+    end
+    
+    warn("TipStatsGUI: [Profile] Could not create player subfolder for: " .. playerName)
+    return false
+end
+
 -- Function to get current timestamp in ISO format
 local function getCurrentTimestamp()
     local dateTable = os.date("*t")
@@ -1562,7 +1608,6 @@ local function collectPlayerProfileData(player)
         stats = {},
         settings = {},
         backpack = {},
-        gamepasses = {},
         chat = {}
     }
     
@@ -1651,115 +1696,79 @@ local function collectPlayerProfileData(player)
         end)
     end
     
-    -- Collect Gamepasses
-    local userGamepasses = player:FindFirstChild("UserCreatedGamepasses")
-    if userGamepasses then
-        for _, gamepassFolder in ipairs(userGamepasses:GetChildren()) do
-            if gamepassFolder:IsA("Folder") then
-                local gamepassId = gamepassFolder.Name
-                local gamepassName = nil
-                local gamepassPrice = nil
-                
-                local nameChild = gamepassFolder:FindFirstChild("Name")
-                if nameChild then
-                    if nameChild:IsA("StringValue") then
-                        gamepassName = nameChild.Value
-                    elseif nameChild:IsA("ValueBase") then
-                        gamepassName = tostring(nameChild.Value)
-                    end
-                end
-                
-                local priceChild = gamepassFolder:FindFirstChild("Price")
-                if priceChild then
-                    if priceChild:IsA("IntValue") or priceChild:IsA("NumberValue") then
-                        gamepassPrice = priceChild.Value
-                    elseif priceChild:IsA("StringValue") then
-                        gamepassPrice = tonumber(priceChild.Value)
-                    end
-                end
-                
-                table.insert(profileData.gamepasses, {
-                    id = gamepassId,
-                    name = gamepassName,
-                    price = gamepassPrice
-                })
-            end
-        end
-        -- Sort by name or ID
-        table.sort(profileData.gamepasses, function(a, b)
-            local nameA = a.name or a.id
-            local nameB = b.name or b.id
-            return nameA < nameB
-        end)
-    end
-    
-    -- Collect Chat Messages for this player and format them by day/time
-    if playerChatMessages[player.Name] then
-        local rawMessages = playerChatMessages[player.Name]
-        
-        -- Function to extract date and time from timestamp
-        local function parseTimestamp(ts)
-            if not ts then return nil, nil end
-            local datePart, timePart = ts:match("^(%d%d%d%d%-%d%d%-%d%d)T(%d%d:%d%d:%d%d)$")
-            return datePart, timePart
-        end
-        
-        -- Organize messages by date
-        local messagesByDate = {}
-        for _, msg in ipairs(rawMessages) do
-            local date, time = parseTimestamp(msg.timestamp)
-            if date then
-                if not messagesByDate[date] then
-                    messagesByDate[date] = {}
-                end
-                table.insert(messagesByDate[date], {
-                    time = time or "00:00:00",
-                    sender = msg.sender or player.Name,
-                    recipient = msg.recipient,
-                    content = msg.content or ""
-                })
-            end
-        end
-        
-        -- Sort messages within each date by time
-        for date, messages in pairs(messagesByDate) do
-            table.sort(messages, function(a, b)
-                return (a.time or "") < (b.time or "")
-            end)
-        end
-        
-        -- Convert to array format sorted by date (newest first)
-        local sortedDates = {}
-        for date in pairs(messagesByDate) do
-            table.insert(sortedDates, date)
-        end
-        table.sort(sortedDates, function(a, b)
-            return a > b -- Newest first
-        end)
-        
-        -- Format as readable structure
-        profileData.chat = {
-            format = "grouped_by_date",
-            messages = {}
-        }
-        
-        for _, date in ipairs(sortedDates) do
-            table.insert(profileData.chat.messages, {
-                date = date,
-                messages = messagesByDate[date]
-            })
-        end
-    else
-        profileData.chat = {
-            format = "grouped_by_date",
-            messages = {}
-        }
-    end
+    -- Note: Chat messages are NOT included in profile data
+    -- They are saved separately to messages.json to reduce lag
+    -- Chat messages are loaded separately in loadPlayerProfile() and merged for display
     
     return profileData
 end
 
--- Function to save player profile to workspace folder
+-- Function to save chat messages separately to messages.json
+local function savePlayerChatMessages(playerName, messages)
+    if not writefile or not isfile or not readfile then
+        return false
+    end
+    
+    if not ensurePlayerSubfolder(playerName) then
+        return false
+    end
+    
+    local messagesFile = PROFILE_BASE_FOLDER .. "/" .. playerName .. "/messages.json"
+    
+    -- Read existing messages if file exists
+    local existingMessages = {}
+    if isfile(messagesFile) then
+        local success, fileContent = pcall(function()
+            return readfile(messagesFile)
+        end)
+        
+        if success and fileContent and fileContent ~= "" then
+            local decodeSuccess, decoded = pcall(function()
+                return HttpService:JSONDecode(fileContent)
+            end)
+            if decodeSuccess and decoded and type(decoded) == "table" then
+                existingMessages = decoded
+            end
+        end
+    end
+    
+    -- Merge new messages with existing (avoid duplicates based on timestamp and content)
+    local messageMap = {}
+    for _, msg in ipairs(existingMessages) do
+        local key = (msg.timestamp or "") .. "|" .. (msg.content or "")
+        messageMap[key] = msg
+    end
+    
+    -- Add new messages
+    for _, msg in ipairs(messages) do
+        local key = (msg.timestamp or "") .. "|" .. (msg.content or "")
+        if not messageMap[key] then
+            table.insert(existingMessages, msg)
+            messageMap[key] = msg
+        end
+    end
+    
+    -- Encode and save
+    local success, jsonString = pcall(function()
+        return HttpService:JSONEncode(existingMessages)
+    end)
+    
+    if not success or not jsonString then
+        return false
+    end
+    
+    -- Pretty-print JSON for readability
+    local formattedJSON = prettyPrintJSON(jsonString)
+    
+    -- Save to file
+    local writeSuccess, writeError = pcall(function()
+        writefile(messagesFile, formattedJSON)
+    end)
+    
+    return writeSuccess
+end
+
+-- Function to save player profile to workspace folder (without chat messages)
 local function savePlayerProfile(player, profileData)
     if not writefile or not isfile or not readfile then
         warn("TipStatsGUI: File I/O functions not available. Cannot save player profile.")
@@ -1771,16 +1780,24 @@ local function savePlayerProfile(player, profileData)
         return false
     end
     
-    -- Ensure Players folder exists (required - no fallback to root)
+    -- Ensure player subfolder exists (required - no fallback to root)
     local playerName = player.Name
     
-    if not ensurePlayersFolder() then
-        warn("TipStatsGUI: [Profile] Failed to create Players folder. Cannot save profile for: " .. playerName)
+    if not ensurePlayerSubfolder(playerName) then
+        warn("TipStatsGUI: [Profile] Failed to create player subfolder. Cannot save profile for: " .. playerName)
         return false
     end
     
-    -- Use folder path: Players/PlayerName.json
-    local profileFile = PROFILE_BASE_FOLDER .. "/" .. playerName .. ".json"
+    -- Remove chat messages from profile data (saved separately)
+    local profileDataWithoutChat = {}
+    for k, v in pairs(profileData) do
+        if k ~= "chat" then
+            profileDataWithoutChat[k] = v
+        end
+    end
+    
+    -- Use folder path: Players/PlayerName/profile.json
+    local profileFile = PROFILE_BASE_FOLDER .. "/" .. playerName .. "/profile.json"
     
     -- Read existing profile if it exists
     local existingEntries = {}
@@ -1799,8 +1816,8 @@ local function savePlayerProfile(player, profileData)
         end
     end
     
-    -- Append new entry
-    table.insert(existingEntries, profileData)
+    -- Append new entry (without chat messages)
+    table.insert(existingEntries, profileDataWithoutChat)
     
     -- Encode and save
     local success, jsonString = pcall(function()
@@ -1835,37 +1852,116 @@ local function savePlayerProfile(player, profileData)
     end
 end
 
--- Function to load player profile
+-- Function to load player profile (loads both profile.json and messages.json)
 local function loadPlayerProfile(player)
     if not readfile or not isfile then
         return nil
     end
     
     local playerName = player.Name
-    -- Only use folder path: Players/PlayerName.json
-    local profileFile = PROFILE_BASE_FOLDER .. "/" .. playerName .. ".json"
+    local profileFile = PROFILE_BASE_FOLDER .. "/" .. playerName .. "/profile.json"
+    local messagesFile = PROFILE_BASE_FOLDER .. "/" .. playerName .. "/messages.json"
     
-    if not isfile(profileFile) then
+    -- Load profile data
+    local profileEntries = nil
+    if isfile(profileFile) then
+        local success, fileContent = pcall(function()
+            return readfile(profileFile)
+        end)
+        
+        if success and fileContent and fileContent ~= "" then
+            local decodeSuccess, decoded = pcall(function()
+                return HttpService:JSONDecode(fileContent)
+            end)
+            if decodeSuccess and decoded and type(decoded) == "table" then
+                profileEntries = decoded
+            end
+        end
+    end
+    
+    -- Load messages data
+    local messagesData = nil
+    if isfile(messagesFile) then
+        local success, fileContent = pcall(function()
+            return readfile(messagesFile)
+        end)
+        
+        if success and fileContent and fileContent ~= "" then
+            local decodeSuccess, decoded = pcall(function()
+                return HttpService:JSONDecode(fileContent)
+            end)
+            if decodeSuccess and decoded and type(decoded) == "table" then
+                messagesData = decoded
+            end
+        end
+    end
+    
+    -- If no profile entries, return nil
+    if not profileEntries then
         return nil
     end
     
-    local success, fileContent = pcall(function()
-        return readfile(profileFile)
-    end)
-    
-    if not success or not fileContent or fileContent == "" then
-        return nil
+    -- Merge messages into profile entries for display
+    if messagesData and #messagesData > 0 then
+        -- Format messages by date (same logic as before)
+        local function parseTimestamp(ts)
+            if not ts then return nil, nil end
+            local datePart, timePart = ts:match("^(%d%d%d%d%-%d%d%-%d%d)T(%d%d:%d%d:%d%d)$")
+            return datePart, timePart
+        end
+        
+        local messagesByDate = {}
+        for _, msg in ipairs(messagesData) do
+            local date, time = parseTimestamp(msg.timestamp)
+            if date then
+                if not messagesByDate[date] then
+                    messagesByDate[date] = {}
+                end
+                table.insert(messagesByDate[date], {
+                    time = time or "00:00:00",
+                    sender = msg.sender or playerName,
+                    recipient = msg.recipient,
+                    content = msg.content or ""
+                })
+            end
+        end
+        
+        -- Sort messages within each date by time
+        for date, messages in pairs(messagesByDate) do
+            table.sort(messages, function(a, b)
+                return (a.time or "") < (b.time or "")
+            end)
+        end
+        
+        -- Convert to array format sorted by date (newest first)
+        local sortedDates = {}
+        for date in pairs(messagesByDate) do
+            table.insert(sortedDates, date)
+        end
+        table.sort(sortedDates, function(a, b)
+            return a > b -- Newest first
+        end)
+        
+        -- Add chat data to each profile entry
+        local chatData = {
+            format = "grouped_by_date",
+            messages = {}
+        }
+        
+        for _, date in ipairs(sortedDates) do
+            table.insert(chatData.messages, {
+                date = date,
+                messages = messagesByDate[date]
+            })
+        end
+        
+        -- Add chat to all entries (for backward compatibility and display)
+        for _, entry in ipairs(profileEntries) do
+            entry.chat = chatData
+        end
     end
     
-    local decodeSuccess, profileEntries = pcall(function()
-        return HttpService:JSONDecode(fileContent)
-    end)
-    
-    if decodeSuccess and profileEntries and type(profileEntries) == "table" then
-        return profileEntries
-    end
-    
-    return nil
+    return profileEntries
 end
 
 -- Function to log player leaving
@@ -1879,7 +1975,7 @@ local function logPlayerLeaving(player)
     end
     
     local playerName = player.Name
-    local profileFile = PROFILE_BASE_FOLDER .. "/" .. playerName .. ".json"
+    local profileFile = PROFILE_BASE_FOLDER .. "/" .. playerName .. "/profile.json"
     
     -- Read existing profile
     local existingEntries = {}
@@ -1936,11 +2032,13 @@ local function updateAllPlayerProfiles()
         return
     end
     
+    -- Save players sequentially with delay to prevent lag
     for _, player in ipairs(Players:GetPlayers()) do
         if player and player.Parent then
             local profileData = collectPlayerProfileData(player)
             if profileData then
                 savePlayerProfile(player, profileData)
+                task.wait(0.75) -- Delay after each save to prevent lag
             end
         end
     end
@@ -1957,17 +2055,14 @@ local function startProfileUpdateSystem()
     
     -- Take snapshot of all existing players immediately when enabled
     task.spawn(function()
-        -- Create profiles instantly for all players in lobby
+        -- Create profiles sequentially for all players in lobby with delay to prevent lag
         for _, player in ipairs(Players:GetPlayers()) do
             if player and player.Parent then
-                task.spawn(function()
-                    -- Small delay per player to avoid overwhelming the system
-                    task.wait(0.1)
-                    local profileData = collectPlayerProfileData(player)
-                    if profileData then
-                        savePlayerProfile(player, profileData)
-                    end
-                end)
+                local profileData = collectPlayerProfileData(player)
+                if profileData then
+                    savePlayerProfile(player, profileData)
+                    task.wait(0.75) -- Delay after each save to prevent lag
+                end
             end
         end
     end)
@@ -2028,18 +2123,16 @@ task.spawn(function()
     task.wait(0.5) -- Small delay to ensure everything is loaded
     if settingsState.buildPlayerProfile then
         startProfileUpdateSystem()
-        -- Also create profiles immediately for all current players
+        -- Also create profiles sequentially for all current players with delay to prevent lag
         task.spawn(function()
             for _, player in ipairs(Players:GetPlayers()) do
                 if player and player.Parent then
-                    task.spawn(function()
-                        task.wait(0.2) -- Small stagger to avoid overwhelming
-                        local profileData = collectPlayerProfileData(player)
-                        if profileData then
-                            savePlayerProfile(player, profileData)
-                            -- Profile created (silent to reduce console spam)
-                        end
-                    end)
+                    local profileData = collectPlayerProfileData(player)
+                    if profileData then
+                        savePlayerProfile(player, profileData)
+                        task.wait(0.75) -- Delay after each save to prevent lag
+                        -- Profile created (silent to reduce console spam)
+                    end
                 end
             end
         end)
@@ -4695,7 +4788,7 @@ createPlayerInfoUI = function(targetPlayer, options)
     local contentFrame = Instance.new("Frame")
     contentFrame.Name = "ContentFrame"
     contentFrame.Size = UDim2.new(1, -20, 1, -65)
-    contentFrame.Position = UDim2.new(0, 10, 0, 55)
+    contentFrame.Position = UDim2.new(0, 20, 0, 55)
     contentFrame.BackgroundTransparency = 1
     contentFrame.Parent = infoFrame
     contentFrame.Parent = infoFrame
@@ -4731,7 +4824,7 @@ createPlayerInfoUI = function(targetPlayer, options)
     statsListLayout.Parent = statsList
     
     local statsListPadding = Instance.new("UIPadding")
-    statsListPadding.PaddingTop = UDim.new(0, 0)
+    statsListPadding.PaddingTop = UDim.new(0, 8)
     statsListPadding.PaddingBottom = UDim.new(0, 5)
     statsListPadding.PaddingLeft = UDim.new(0, 0)
     statsListPadding.PaddingRight = UDim.new(0, 0)
@@ -4746,7 +4839,7 @@ createPlayerInfoUI = function(targetPlayer, options)
         row.Parent = statsList
         
         local rowCorner = Instance.new("UICorner")
-        rowCorner.CornerRadius = UDim.new(0, 6)
+        rowCorner.CornerRadius = UDim.new(0, 8)
         rowCorner.Parent = row
         
         local rowBorder = Instance.new("UIStroke")
@@ -4785,25 +4878,34 @@ createPlayerInfoUI = function(targetPlayer, options)
     -- Create stat rows with LayoutOrder
     local receivedStat = createStatRow("Received", "0")
     receivedStat.Parent.LayoutOrder = 1
+    receivedStat.Parent.Size = UDim2.new(1, -18, 0, 35)
+    receivedStat.Parent.Position = UDim2.new(0, 15, 0, 0)
     local donatedStat = createStatRow("Donated", "0")
     donatedStat.Parent.LayoutOrder = 2
+    donatedStat.Parent.Size = UDim2.new(1, -18, 0, 35)
+    donatedStat.Parent.Position = UDim2.new(0, 15, 0, 0)
     local timeStat = createStatRow("Played Time", "0m")
     timeStat.Parent.LayoutOrder = 3
+    timeStat.Parent.Size = UDim2.new(1, -18, 0, 35)
+    timeStat.Parent.Position = UDim2.new(0, 15, 0, 0)
     local creditsStat = createStatRow("Credits", "0")
     creditsStat.Parent.LayoutOrder = 4
+    creditsStat.Parent.Size = UDim2.new(1, -18, 0, 35)
+    creditsStat.Parent.Position = UDim2.new(0, 15, 0, 0)
     
     -- Settings section header
     local settingsHeaderFrame = Instance.new("Frame")
     settingsHeaderFrame.Name = "SettingsHeader"
-    settingsHeaderFrame.Size = UDim2.new(1, 0, 0, 35)
+    settingsHeaderFrame.Size = UDim2.new(1, -20, 0, 35)
+    settingsHeaderFrame.Position = UDim2.new(0, 20, 0, 0)
     settingsHeaderFrame.BackgroundTransparency = 1
     settingsHeaderFrame.LayoutOrder = 5
     settingsHeaderFrame.Parent = statsList
     
     local settingsHeader = Instance.new("TextLabel")
     settingsHeader.Name = "HeaderText"
-    settingsHeader.Size = UDim2.new(1, -20, 1, 0)
-    settingsHeader.Position = UDim2.new(0, 10, 0, 0)
+    settingsHeader.Size = UDim2.new(1, 0, 1, 0)
+    settingsHeader.Position = UDim2.new(0, 0, 0, 0)
     settingsHeader.BackgroundTransparency = 1
     settingsHeader.Text = "Their Settings"
     settingsHeader.TextColor3 = Color3.fromRGB(240, 240, 240)
@@ -4815,8 +4917,8 @@ createPlayerInfoUI = function(targetPlayer, options)
     -- Divider line
     local divider = Instance.new("Frame")
     divider.Name = "Divider"
-    divider.Size = UDim2.new(1, -20, 0, 1)
-    divider.Position = UDim2.new(0, 10, 1, -1)
+    divider.Size = UDim2.new(1, 0, 0, 1)
+    divider.Position = UDim2.new(0, 0, 1, -1)
     divider.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
     divider.BorderSizePixel = 0
     divider.Parent = settingsHeaderFrame
@@ -4824,31 +4926,46 @@ createPlayerInfoUI = function(targetPlayer, options)
     -- Create ALL settings rows (must be after header) with LayoutOrder
     local aurasStat = createStatRow("Auras", "Off")
     aurasStat.Parent.LayoutOrder = 6
+    aurasStat.Parent.Size = UDim2.new(1, -18, 0, 35)
+    aurasStat.Parent.Position = UDim2.new(0, 15, 0, 0)
     local giftsStat = createStatRow("Gifts", "Off")
     giftsStat.Parent.LayoutOrder = 7
+    giftsStat.Parent.Size = UDim2.new(1, -18, 0, 35)
+    giftsStat.Parent.Position = UDim2.new(0, 15, 0, 0)
     local pianoStat = createStatRow("Piano", "Off")
     pianoStat.Parent.LayoutOrder = 8
+    pianoStat.Parent.Size = UDim2.new(1, -18, 0, 35)
+    pianoStat.Parent.Position = UDim2.new(0, 15, 0, 0)
     local rankStat = createStatRow("Title", "Off")
     rankStat.Parent.LayoutOrder = 9
+    rankStat.Parent.Size = UDim2.new(1, -18, 0, 35)
+    rankStat.Parent.Position = UDim2.new(0, 15, 0, 0)
     local shadowStat = createStatRow("Shadow", "Off")
     shadowStat.Parent.LayoutOrder = 10
+    shadowStat.Parent.Size = UDim2.new(1, -18, 0, 35)
+    shadowStat.Parent.Position = UDim2.new(0, 15, 0, 0)
     local teleportStat = createStatRow("Teleport", "Off")
     teleportStat.Parent.LayoutOrder = 11
+    teleportStat.Parent.Size = UDim2.new(1, -18, 0, 35)
+    teleportStat.Parent.Position = UDim2.new(0, 15, 0, 0)
     local timeSettingStat = createStatRow("Show Total Time", "Off")
     timeSettingStat.Parent.LayoutOrder = 12
+    timeSettingStat.Parent.Size = UDim2.new(1, -18, 0, 35)
+    timeSettingStat.Parent.Position = UDim2.new(0, 15, 0, 0)
     
     -- Backpack items section header
     local backpackHeaderFrame = Instance.new("Frame")
     backpackHeaderFrame.Name = "BackpackHeader"
-    backpackHeaderFrame.Size = UDim2.new(1, 0, 0, 35)
+    backpackHeaderFrame.Size = UDim2.new(1, -20, 0, 35)
+    backpackHeaderFrame.Position = UDim2.new(0, 20, 0, 0)
     backpackHeaderFrame.BackgroundTransparency = 1
     backpackHeaderFrame.LayoutOrder = 13
     backpackHeaderFrame.Parent = statsList
     
     local backpackHeader = Instance.new("TextLabel")
     backpackHeader.Name = "HeaderText"
-    backpackHeader.Size = UDim2.new(1, -20, 1, 0)
-    backpackHeader.Position = UDim2.new(0, 10, 0, 0)
+    backpackHeader.Size = UDim2.new(1, 0, 1, 0)
+    backpackHeader.Position = UDim2.new(0, 0, 0, 0)
     backpackHeader.BackgroundTransparency = 1
     backpackHeader.Text = "Backpack Items"
     backpackHeader.TextColor3 = Color3.fromRGB(240, 240, 240)
@@ -4860,8 +4977,8 @@ createPlayerInfoUI = function(targetPlayer, options)
     -- Divider line for backpack section
     local backpackDivider = Instance.new("Frame")
     backpackDivider.Name = "Divider"
-    backpackDivider.Size = UDim2.new(1, -20, 0, 1)
-    backpackDivider.Position = UDim2.new(0, 10, 1, -1)
+    backpackDivider.Size = UDim2.new(1, 0, 0, 1)
+    backpackDivider.Position = UDim2.new(0, 0, 1, -1)
     backpackDivider.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
     backpackDivider.BorderSizePixel = 0
     backpackDivider.Parent = backpackHeaderFrame
@@ -4895,7 +5012,7 @@ createPlayerInfoUI = function(targetPlayer, options)
         local itemLabel = Instance.new("TextLabel")
         itemLabel.Name = "ItemLabel"
         itemLabel.Size = UDim2.new(1, -20, 1, 0)
-        itemLabel.Position = UDim2.new(0, 10, 0, 0)
+        itemLabel.Position = UDim2.new(0, 20, 0, 0)
         itemLabel.BackgroundTransparency = 1
         itemLabel.Text = itemName .. " (" .. itemClass .. ")"
         itemLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
@@ -4924,7 +5041,7 @@ createPlayerInfoUI = function(targetPlayer, options)
             local noItemsLabel = Instance.new("TextLabel")
             noItemsLabel.Name = "NoItems"
             noItemsLabel.Size = UDim2.new(1, -20, 0, 20)
-            noItemsLabel.Position = UDim2.new(0, 10, 0, 0)
+            noItemsLabel.Position = UDim2.new(0, 20, 0, 0)
             noItemsLabel.BackgroundTransparency = 1
             noItemsLabel.Text = "No backpack found"
             noItemsLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
@@ -4954,7 +5071,7 @@ createPlayerInfoUI = function(targetPlayer, options)
             local noItemsLabel = Instance.new("TextLabel")
             noItemsLabel.Name = "NoItems"
             noItemsLabel.Size = UDim2.new(1, -20, 0, 20)
-            noItemsLabel.Position = UDim2.new(0, 10, 0, 0)
+            noItemsLabel.Position = UDim2.new(0, 20, 0, 0)
             noItemsLabel.BackgroundTransparency = 1
             noItemsLabel.Text = "No items in backpack"
             noItemsLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
@@ -4974,334 +5091,21 @@ createPlayerInfoUI = function(targetPlayer, options)
         backpackItemsContainer.Size = UDim2.new(1, 0, 0, math.max(contentSize.Y, 20))
     end
     
-    -- Gamepasses section header
-    local gamepassesHeaderFrame = Instance.new("Frame")
-    gamepassesHeaderFrame.Name = "GamepassesHeader"
-    gamepassesHeaderFrame.Size = UDim2.new(1, 0, 0, 35)
-    gamepassesHeaderFrame.BackgroundTransparency = 1
-    gamepassesHeaderFrame.LayoutOrder = 15
-    gamepassesHeaderFrame.Parent = statsList
-    
-    local gamepassesHeader = Instance.new("TextLabel")
-    gamepassesHeader.Name = "HeaderText"
-    gamepassesHeader.Size = UDim2.new(1, -50, 1, 0)
-    gamepassesHeader.Position = UDim2.new(0, 10, 0, 0)
-    gamepassesHeader.BackgroundTransparency = 1
-    gamepassesHeader.Text = "Gamepasses"
-    gamepassesHeader.TextColor3 = Color3.fromRGB(240, 240, 240)
-    gamepassesHeader.TextSize = 16
-    gamepassesHeader.Font = Enum.Font.GothamBold
-    gamepassesHeader.TextXAlignment = Enum.TextXAlignment.Left
-    gamepassesHeader.Parent = gamepassesHeaderFrame
-    
-    -- Expand/Collapse button for gamepasses
-    local gamepassesToggleButton = Instance.new("TextButton")
-    gamepassesToggleButton.Name = "ToggleButton"
-    gamepassesToggleButton.Size = UDim2.new(0, 30, 0, 30)
-    gamepassesToggleButton.Position = UDim2.new(1, -40, 0, 2.5)
-    gamepassesToggleButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    gamepassesToggleButton.Text = "▼"
-    gamepassesToggleButton.TextColor3 = Color3.fromRGB(220, 220, 220)
-    gamepassesToggleButton.TextSize = 16
-    gamepassesToggleButton.Font = Enum.Font.GothamBold
-    gamepassesToggleButton.BorderSizePixel = 0
-    gamepassesToggleButton.Parent = gamepassesHeaderFrame
-    
-    local toggleCorner = Instance.new("UICorner")
-    toggleCorner.CornerRadius = UDim.new(0, 6)
-    toggleCorner.Parent = gamepassesToggleButton
-    
-    -- Hover effect for toggle button
-    gamepassesToggleButton.MouseEnter:Connect(function()
-        gamepassesToggleButton.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
-    end)
-    gamepassesToggleButton.MouseLeave:Connect(function()
-        gamepassesToggleButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    end)
-    
-    -- Divider line for gamepasses section
-    local gamepassesDivider = Instance.new("Frame")
-    gamepassesDivider.Name = "Divider"
-    gamepassesDivider.Size = UDim2.new(1, -20, 0, 1)
-    gamepassesDivider.Position = UDim2.new(0, 10, 1, -1)
-    gamepassesDivider.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    gamepassesDivider.BorderSizePixel = 0
-    gamepassesDivider.Parent = gamepassesHeaderFrame
-    
-    -- Gamepasses container
-    local gamepassesContainer = Instance.new("Frame")
-    gamepassesContainer.Name = "GamepassesContainer"
-    gamepassesContainer.Size = UDim2.new(1, 0, 0, 0)
-    gamepassesContainer.BackgroundTransparency = 1
-    gamepassesContainer.LayoutOrder = 16
-    gamepassesContainer.Parent = statsList
-    gamepassesContainer.Visible = false -- Start collapsed
-    
-    local gamepassesLayout = Instance.new("UIListLayout")
-    gamepassesLayout.Padding = UDim.new(0, 5)
-    gamepassesLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    gamepassesLayout.Parent = gamepassesContainer
-    
-    -- Track collapse state
-    local gamepassesExpanded = false
-    
-    -- Toggle function for gamepasses
-    local function toggleGamepasses()
-        gamepassesExpanded = not gamepassesExpanded
-        gamepassesContainer.Visible = gamepassesExpanded
-        
-        if gamepassesExpanded then
-            gamepassesToggleButton.Text = "▲"
-        else
-            gamepassesToggleButton.Text = "▼"
-        end
-    end
-    
-    -- Connect toggle button
-    gamepassesToggleButton.MouseButton1Click:Connect(toggleGamepasses)
-    
-    -- Function to create gamepass display row
-    local function createGamepassRow(gamepassId, gamepassName, gamepassFolder, gamepassPrice)
-        local gamepassRow = Instance.new("Frame")
-        gamepassRow.Name = tostring(gamepassId)
-        gamepassRow.Size = UDim2.new(1, 0, 0, 50)
-        gamepassRow.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-        gamepassRow.BorderSizePixel = 0
-        gamepassRow.Parent = gamepassesContainer
-        
-        local gamepassCorner = Instance.new("UICorner")
-        gamepassCorner.CornerRadius = UDim.new(0, 6)
-        gamepassCorner.Parent = gamepassRow
-        
-        local gamepassBorder = Instance.new("UIStroke")
-        gamepassBorder.Color = Color3.fromRGB(60, 60, 60)
-        gamepassBorder.Thickness = 1
-        gamepassBorder.Transparency = 0.4
-        gamepassBorder.Parent = gamepassRow
-        
-        -- Gamepass name
-        local gamepassNameLabel = Instance.new("TextLabel")
-        gamepassNameLabel.Name = "GamepassName"
-        gamepassNameLabel.Size = UDim2.new(1, -100, 0, 25)
-        gamepassNameLabel.Position = UDim2.new(0, 10, 0, 5)
-        gamepassNameLabel.BackgroundTransparency = 1
-        gamepassNameLabel.Text = gamepassName or "Gamepass " .. gamepassId
-        gamepassNameLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
-        gamepassNameLabel.TextSize = 14
-        gamepassNameLabel.Font = Enum.Font.GothamBold
-        gamepassNameLabel.TextXAlignment = Enum.TextXAlignment.Left
-        gamepassNameLabel.TextTruncate = Enum.TextTruncate.AtEnd
-        gamepassNameLabel.Parent = gamepassRow
-        
-        -- Gamepass ID display
-        local gamepassIdLabel = Instance.new("TextLabel")
-        gamepassIdLabel.Name = "GamepassId"
-        gamepassIdLabel.Size = UDim2.new(1, -180, 0, 20)
-        gamepassIdLabel.Position = UDim2.new(0, 10, 0, 28)
-        gamepassIdLabel.BackgroundTransparency = 1
-        gamepassIdLabel.Text = "ID: " .. gamepassId
-        gamepassIdLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
-        gamepassIdLabel.TextSize = 12
-        gamepassIdLabel.Font = Enum.Font.Gotham
-        gamepassIdLabel.TextXAlignment = Enum.TextXAlignment.Left
-        gamepassIdLabel.Parent = gamepassRow
-        
-        -- Price display
-        local priceLabel = Instance.new("TextLabel")
-        priceLabel.Name = "PriceLabel"
-        priceLabel.Size = UDim2.new(0, 70, 0, 35)
-        priceLabel.Position = UDim2.new(1, -170, 0, 7.5)
-        priceLabel.BackgroundTransparency = 1
-        if gamepassPrice and tonumber(gamepassPrice) and tonumber(gamepassPrice) > 0 then
-            priceLabel.Text = tostring(gamepassPrice) .. " R$"
-        else
-            priceLabel.Text = "N/A"
-        end
-        -- Debug: print price info
-        print("Creating gamepass row - ID:", gamepassId, "Price:", gamepassPrice, "Price type:", type(gamepassPrice))
-        priceLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
-        priceLabel.TextSize = 14
-        priceLabel.Font = Enum.Font.GothamBold
-        priceLabel.TextXAlignment = Enum.TextXAlignment.Center
-        priceLabel.Parent = gamepassRow
-        
-        -- Buy button
-        local buyButton = Instance.new("TextButton")
-        buyButton.Name = "BuyButton"
-        buyButton.Size = UDim2.new(0, 80, 0, 35)
-        buyButton.Position = UDim2.new(1, -90, 0, 7.5)
-        buyButton.BackgroundColor3 = Color3.fromRGB(50, 150, 50)
-        buyButton.Text = "Buy"
-        buyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-        buyButton.TextSize = 14
-        buyButton.Font = Enum.Font.GothamBold
-        buyButton.BorderSizePixel = 0
-        buyButton.Parent = gamepassRow
-        
-        local buyCorner = Instance.new("UICorner")
-        buyCorner.CornerRadius = UDim.new(0, 6)
-        buyCorner.Parent = buyButton
-        
-        -- Buy button hover effect
-        buyButton.MouseEnter:Connect(function()
-            buyButton.BackgroundColor3 = Color3.fromRGB(60, 180, 60)
-        end)
-        buyButton.MouseLeave:Connect(function()
-            buyButton.BackgroundColor3 = Color3.fromRGB(50, 150, 50)
-        end)
-        
-        -- Buy button click - purchase gamepass using Roblox MarketplaceService
-        buyButton.MouseButton1Click:Connect(function()
-            local id = tonumber(gamepassId)
-            print("Attempting to purchase gamepass ID:", id)
-            if id then
-                -- Use Roblox MarketplaceService to prompt purchase (official Roblox API)
-                -- This must be called from the client, which we are
-                local success, err = pcall(function()
-                    -- PromptGamePassPurchase requires the player and gamepass ID
-                    MarketplaceService:PromptGamePassPurchase(Players.LocalPlayer, id)
-                end)
-                if not success then
-                    warn("Failed to prompt gamepass purchase:", err)
-                    print("Error details:", tostring(err))
-                else
-                    print("Purchase prompt sent successfully for gamepass ID:", id)
-                end
-            else
-                warn("Invalid gamepass ID: " .. tostring(gamepassId))
-                print("Gamepass ID could not be converted to number:", gamepassId)
-            end
-        end)
-        
-        return gamepassRow
-    end
-    
-    -- Function to update gamepasses display
-    local function updateGamepasses()
-        -- Clear existing gamepasses
-        for _, child in ipairs(gamepassesContainer:GetChildren()) do
-            if child:IsA("Frame") or child:IsA("TextLabel") then
-                child:Destroy()
-            end
-        end
-        
-        -- Get UserCreatedGamepasses folder
-        local userGamepasses = targetPlayer:FindFirstChild("UserCreatedGamepasses")
-        if not userGamepasses then
-            -- Show "No gamepasses" message
-            local noGamepassesLabel = Instance.new("TextLabel")
-            noGamepassesLabel.Name = "NoGamepasses"
-            noGamepassesLabel.Size = UDim2.new(1, -20, 0, 30)
-            noGamepassesLabel.Position = UDim2.new(0, 10, 0, 0)
-            noGamepassesLabel.BackgroundTransparency = 1
-            noGamepassesLabel.Text = "No gamepasses available"
-            noGamepassesLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
-            noGamepassesLabel.TextSize = 12
-            noGamepassesLabel.Font = Enum.Font.Gotham
-            noGamepassesLabel.TextXAlignment = Enum.TextXAlignment.Left
-            noGamepassesLabel.Parent = gamepassesContainer
-            return
-        end
-        
-        -- Get all gamepass folders (folders are named with gamepass IDs)
-        local gamepassList = {}
-        local success, children = pcall(function()
-            return userGamepasses:GetChildren()
-        end)
-        if not success or not children then
-            return
-        end
-        
-        for _, gamepassFolder in ipairs(children) do
-            -- Check if it's a folder and the name is a number (gamepass ID)
-            if gamepassFolder:IsA("Folder") then
-                local gamepassId = gamepassFolder.Name
-                local gamepassName = nil
-                local gamepassPrice = nil
-                
-                -- Try to get the Name property from inside the folder
-                local nameChild = gamepassFolder:FindFirstChild("Name")
-                if nameChild then
-                    if nameChild:IsA("StringValue") then
-                        gamepassName = nameChild.Value
-                    elseif nameChild:IsA("ValueBase") then
-                        gamepassName = tostring(nameChild.Value)
-                    end
-                end
-                
-                -- Try to get the Price property from inside the folder
-                local priceChild = gamepassFolder:FindFirstChild("Price")
-                if priceChild then
-                    if priceChild:IsA("IntValue") or priceChild:IsA("NumberValue") then
-                        gamepassPrice = priceChild.Value
-                    elseif priceChild:IsA("StringValue") then
-                        -- Try to convert string to number
-                        gamepassPrice = tonumber(priceChild.Value)
-                    end
-                end
-                
-                -- Debug: print what we found
-                print("Gamepass ID:", gamepassId, "Name:", gamepassName, "Price:", gamepassPrice)
-                print("Folder children:", #gamepassFolder:GetChildren())
-                for _, child in ipairs(gamepassFolder:GetChildren()) do
-                    print("  - Child:", child.Name, "Type:", child.ClassName)
-                end
-                
-                -- Store gamepass info
-                table.insert(gamepassList, {
-                    id = gamepassId,
-                    name = gamepassName,
-                    price = gamepassPrice,
-                    folder = gamepassFolder
-                })
-            end
-        end
-        
-        -- Sort gamepasses by name (or ID if name not available)
-        table.sort(gamepassList, function(a, b)
-            local nameA = a.name or a.id
-            local nameB = b.name or b.id
-            return nameA < nameB
-        end)
-        
-        -- Create rows for each gamepass
-        if #gamepassList == 0 then
-            -- Show "No gamepasses" message
-            local noGamepassesLabel = Instance.new("TextLabel")
-            noGamepassesLabel.Name = "NoGamepasses"
-            noGamepassesLabel.Size = UDim2.new(1, -20, 0, 30)
-            noGamepassesLabel.Position = UDim2.new(0, 10, 0, 0)
-            noGamepassesLabel.BackgroundTransparency = 1
-            noGamepassesLabel.Text = "No gamepasses available"
-            noGamepassesLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
-            noGamepassesLabel.TextSize = 12
-            noGamepassesLabel.Font = Enum.Font.Gotham
-            noGamepassesLabel.TextXAlignment = Enum.TextXAlignment.Left
-            noGamepassesLabel.Parent = gamepassesContainer
-        else
-            for _, gamepassData in ipairs(gamepassList) do
-                createGamepassRow(gamepassData.id, gamepassData.name, gamepassData.folder, gamepassData.price)
-            end
-        end
-        
-        -- Update container size
-        task.wait()
-        local contentSize = gamepassesLayout.AbsoluteContentSize
-        gamepassesContainer.Size = UDim2.new(1, 0, 0, math.max(contentSize.Y, 30))
-    end
+    -- Gamepasses section removed
     
     -- Profile History section header
     local profileHistoryHeaderFrame = Instance.new("Frame")
     profileHistoryHeaderFrame.Name = "ProfileHistoryHeader"
-    profileHistoryHeaderFrame.Size = UDim2.new(1, 0, 0, 35)
+    profileHistoryHeaderFrame.Size = UDim2.new(1, -20, 0, 35)
+    profileHistoryHeaderFrame.Position = UDim2.new(0, 20, 0, 0)
     profileHistoryHeaderFrame.BackgroundTransparency = 1
-    profileHistoryHeaderFrame.LayoutOrder = 17
+    profileHistoryHeaderFrame.LayoutOrder = 15
     profileHistoryHeaderFrame.Parent = statsList
     
     local profileHistoryHeader = Instance.new("TextLabel")
     profileHistoryHeader.Name = "HeaderText"
-    profileHistoryHeader.Size = UDim2.new(1, -20, 1, 0)
-    profileHistoryHeader.Position = UDim2.new(0, 10, 0, 0)
+    profileHistoryHeader.Size = UDim2.new(1, 0, 1, 0)
+    profileHistoryHeader.Position = UDim2.new(0, 0, 0, 0)
     profileHistoryHeader.BackgroundTransparency = 1
     profileHistoryHeader.Text = "Profile History"
     profileHistoryHeader.TextColor3 = Color3.fromRGB(240, 240, 240)
@@ -5313,8 +5117,8 @@ createPlayerInfoUI = function(targetPlayer, options)
     -- Divider line for profile history section
     local profileHistoryDivider = Instance.new("Frame")
     profileHistoryDivider.Name = "Divider"
-    profileHistoryDivider.Size = UDim2.new(1, -20, 0, 1)
-    profileHistoryDivider.Position = UDim2.new(0, 10, 1, -1)
+    profileHistoryDivider.Size = UDim2.new(1, 0, 0, 1)
+    profileHistoryDivider.Position = UDim2.new(0, 0, 1, -1)
     profileHistoryDivider.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
     profileHistoryDivider.BorderSizePixel = 0
     profileHistoryDivider.Parent = profileHistoryHeaderFrame
@@ -5322,15 +5126,22 @@ createPlayerInfoUI = function(targetPlayer, options)
     -- Profile history container
     local profileHistoryContainer = Instance.new("Frame")
     profileHistoryContainer.Name = "ProfileHistoryContainer"
-    profileHistoryContainer.Size = UDim2.new(1, 0, 0, 0)
+    profileHistoryContainer.Size = UDim2.new(1, -20, 0, 0)
+    profileHistoryContainer.Position = UDim2.new(0, 20, 0, 0)
     profileHistoryContainer.BackgroundTransparency = 1
-    profileHistoryContainer.LayoutOrder = 18
+    profileHistoryContainer.LayoutOrder = 16
     profileHistoryContainer.Parent = statsList
     
     local profileHistoryLayout = Instance.new("UIListLayout")
     profileHistoryLayout.Padding = UDim.new(0, 5)
     profileHistoryLayout.SortOrder = Enum.SortOrder.LayoutOrder
     profileHistoryLayout.Parent = profileHistoryContainer
+    
+    -- Add padding to container to center blocks
+    local containerPadding = Instance.new("UIPadding")
+    containerPadding.PaddingLeft = UDim.new(0, 5)
+    containerPadding.PaddingRight = UDim.new(0, 5)
+    containerPadding.Parent = profileHistoryContainer
     
     -- Function to format timestamp (remove T, show date on left, time on right)
     local function formatTimestamp(timestamp)
@@ -5406,7 +5217,7 @@ createPlayerInfoUI = function(targetPlayer, options)
             local noHistoryLabel = Instance.new("TextLabel")
             noHistoryLabel.Name = "NoHistory"
             noHistoryLabel.Size = UDim2.new(1, -20, 0, 30)
-            noHistoryLabel.Position = UDim2.new(0, 10, 0, 0)
+            noHistoryLabel.Position = UDim2.new(0, 20, 0, 0)
             noHistoryLabel.BackgroundTransparency = 1
             noHistoryLabel.Text = "No profile history found"
             noHistoryLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
@@ -5429,7 +5240,7 @@ createPlayerInfoUI = function(targetPlayer, options)
             local noHistoryLabel = Instance.new("TextLabel")
             noHistoryLabel.Name = "NoHistory"
             noHistoryLabel.Size = UDim2.new(1, -20, 0, 30)
-            noHistoryLabel.Position = UDim2.new(0, 10, 0, 0)
+            noHistoryLabel.Position = UDim2.new(0, 20, 0, 0)
             noHistoryLabel.BackgroundTransparency = 1
             noHistoryLabel.Text = "No profile history found"
             noHistoryLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
@@ -5536,7 +5347,7 @@ createPlayerInfoUI = function(targetPlayer, options)
             local noHistoryLabel = Instance.new("TextLabel")
             noHistoryLabel.Name = "NoHistory"
             noHistoryLabel.Size = UDim2.new(1, -20, 0, 30)
-            noHistoryLabel.Position = UDim2.new(0, 10, 0, 0)
+            noHistoryLabel.Position = UDim2.new(0, 20, 0, 0)
             noHistoryLabel.BackgroundTransparency = 1
             noHistoryLabel.Text = "No profile history with changes found"
             noHistoryLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
@@ -5561,8 +5372,9 @@ createPlayerInfoUI = function(targetPlayer, options)
             dateFrame.Name = "DateEntry_" .. i
             -- Reduced height for compact display
             local baseHeight = hasDifferences and 36 or 28
-            dateFrame.Size = UDim2.new(1, -20, 0, baseHeight)
-            dateFrame.Position = UDim2.new(0, 10, 0, 0)
+            -- Center the frame with small margins (moved 10px right)
+            dateFrame.Size = UDim2.new(1, -10, 0, baseHeight)
+            dateFrame.Position = UDim2.new(0, 17, 0, 0)
             dateFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
             dateFrame.BorderSizePixel = 0
             dateFrame.LayoutOrder = i
@@ -5580,7 +5392,7 @@ createPlayerInfoUI = function(targetPlayer, options)
             
             -- Add padding to frame content - increased padding
             local framePadding = Instance.new("UIPadding")
-            framePadding.PaddingLeft = UDim.new(0, 0)
+            framePadding.PaddingLeft = UDim.new(0, 10)
             framePadding.PaddingRight = UDim.new(0, 10)
             framePadding.PaddingTop = UDim.new(0, 4)
             framePadding.PaddingBottom = UDim.new(0, 4)
@@ -5589,11 +5401,11 @@ createPlayerInfoUI = function(targetPlayer, options)
             -- Format timestamp: date on left, time on right
             local dateStr, timeStr = formatTimestamp(entry.timestamp)
             
-            -- Date label (left side) - no left padding to prevent cutoff
+            -- Date label (left side)
             local dateLabel = Instance.new("TextLabel")
             dateLabel.Name = "DateLabel"
             dateLabel.Size = UDim2.new(0.5, -5, 0, 16)
-            dateLabel.Position = UDim2.new(0, 10, 0, 0)
+            dateLabel.Position = UDim2.new(0, 0, 0, 0)
             dateLabel.BackgroundTransparency = 1
             dateLabel.Text = dateStr
             dateLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
@@ -5638,7 +5450,7 @@ createPlayerInfoUI = function(targetPlayer, options)
                     local diffLabel = Instance.new("TextLabel")
                     diffLabel.Name = "DiffLabel"
                     diffLabel.Size = UDim2.new(1, 0, 0, 16)
-                    diffLabel.Position = UDim2.new(0, 10, 0, 16)
+                    diffLabel.Position = UDim2.new(0, 0, 0, 16)
                     diffLabel.BackgroundTransparency = 1
                     diffLabel.Text = diffText
                     diffLabel.TextColor3 = Color3.fromRGB(150, 200, 255)
@@ -5648,8 +5460,9 @@ createPlayerInfoUI = function(targetPlayer, options)
                     diffLabel.TextWrapped = true
                     diffLabel.Parent = dateFrame
                     
-                    -- Compact height for entries with differences (kept same size)
-                    dateFrame.Size = UDim2.new(1, -20, 0, 36)
+                    -- Compact height for entries with differences (kept same size and centered, moved 10px right)
+                    dateFrame.Size = UDim2.new(1, -10, 0, 36)
+                    dateFrame.Position = UDim2.new(0, 17, 0, 0)
                 end
             end
         end
@@ -5657,7 +5470,7 @@ createPlayerInfoUI = function(targetPlayer, options)
         -- Update container size
         task.wait()
         local contentSize = profileHistoryLayout.AbsoluteContentSize
-        profileHistoryContainer.Size = UDim2.new(1, 0, 0, math.max(contentSize.Y, 20))
+        profileHistoryContainer.Size = UDim2.new(1, -20, 0, math.max(contentSize.Y, 20))
     end
     
     -- Update profile history on UI creation
@@ -5877,7 +5690,7 @@ createPlayerInfoUI = function(targetPlayer, options)
     updateCredits()
     updateSettings()
     updateBackpackItems()
-    updateGamepasses()
+    -- updateGamepasses() -- Removed
     
     -- Listen for changes
     spawn(function()
@@ -6035,21 +5848,7 @@ createPlayerInfoUI = function(targetPlayer, options)
             end)
         end
         
-        -- Monitor UserCreatedGamepasses for changes
-        local userGamepasses = targetPlayer:FindFirstChild("UserCreatedGamepasses")
-        if not userGamepasses then
-            userGamepasses = targetPlayer:WaitForChild("UserCreatedGamepasses", 10)
-        end
-        if userGamepasses then
-            updateGamepasses()
-            -- Listen for gamepasses being added or removed
-            userGamepasses.ChildAdded:Connect(function()
-                updateGamepasses()
-            end)
-            userGamepasses.ChildRemoved:Connect(function()
-                updateGamepasses()
-            end)
-        end
+        -- Gamepasses monitoring removed
     end)
     
     -- Update canvas size
@@ -6065,10 +5864,7 @@ createPlayerInfoUI = function(targetPlayer, options)
     end)
     
     -- Also update canvas when gamepasses change
-    gamepassesLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        local contentSize = statsListLayout.AbsoluteContentSize
-        statsList.CanvasSize = UDim2.new(0, 0, 0, contentSize.Y + 10)
-    end)
+    -- gamepassesLayout removed
     
     -- Initial canvas size update
     task.wait()
@@ -7928,12 +7724,19 @@ spawn(function()
                         if not playerChatMessages[playerName] then
                             playerChatMessages[playerName] = {}
                         end
-                        table.insert(playerChatMessages[playerName], {
+                        local messageEntry = {
                             sender = playerName,
                             recipient = recipient,
                             content = messageText,
                             timestamp = getCurrentTimestamp()
-                        })
+                        }
+                        table.insert(playerChatMessages[playerName], messageEntry)
+                        
+                        -- Save message immediately to messages.json (separate from profile)
+                        task.spawn(function()
+                            savePlayerChatMessages(playerName, {messageEntry})
+                        end)
+                        
                         -- Track this message to prevent duplicates
                         lastLoggedMessages[playerName] = {
                             content = messageText,
