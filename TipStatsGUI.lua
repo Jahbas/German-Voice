@@ -2,7 +2,7 @@
 -- Displays all players' TipJarStats.Donated values in a scrollable list
 
 -- Version system to ensure only one instance runs at a time
-local SCRIPT_VERSION = "0.9.2beta"
+local SCRIPT_VERSION = "0.9.3beta"
 
 -- Function to compare version strings (e.g., "0.5beta" vs "0.6beta" or "0.5.1beta")
 local function compareVersions(version1, version2)
@@ -2707,6 +2707,72 @@ local function toggleSettingsPanel()
             end
         end)
     end)
+    
+    -- Report Bug button (matching other settings toggles exactly)
+    local reportBugFrame = Instance.new("Frame")
+    reportBugFrame.Name = "ReportBugOption"
+    reportBugFrame.Size = UDim2.new(1, 0, 0, 50)
+    reportBugFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    reportBugFrame.BorderSizePixel = 0
+    reportBugFrame.Visible = true
+    reportBugFrame.Parent = optionsContainer
+
+    local reportBugCorner = Instance.new("UICorner")
+    reportBugCorner.CornerRadius = UDim.new(0, 8)
+    reportBugCorner.Parent = reportBugFrame
+
+    local reportBugBorder = Instance.new("UIStroke")
+    reportBugBorder.Color = Color3.fromRGB(60, 60, 60)
+    reportBugBorder.Thickness = 1
+    reportBugBorder.Transparency = 0.4
+    reportBugBorder.Parent = reportBugFrame
+
+    local reportBugLabel = Instance.new("TextLabel")
+    reportBugLabel.Name = "Label"
+    reportBugLabel.Size = UDim2.new(1, -20, 1, 0)
+    reportBugLabel.Position = UDim2.new(0, 10, 0, 0)
+    reportBugLabel.BackgroundTransparency = 1
+    reportBugLabel.Text = "Report Bug"
+    reportBugLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    reportBugLabel.TextSize = 14
+    reportBugLabel.Font = Enum.Font.GothamBold
+    reportBugLabel.TextXAlignment = Enum.TextXAlignment.Left
+    reportBugLabel.Visible = true
+    reportBugLabel.Parent = reportBugFrame
+    reportBugLabel.Active = false
+
+    -- Make entire frame clickable with TextButton overlay
+    local reportBugButton = Instance.new("TextButton")
+    reportBugButton.Name = "ReportBugButton"
+    reportBugButton.Size = UDim2.new(1, 0, 1, 0)
+    reportBugButton.Position = UDim2.new(0, 0, 0, 0)
+    reportBugButton.BackgroundTransparency = 1
+    reportBugButton.Text = ""
+    reportBugButton.BorderSizePixel = 0
+    reportBugButton.ZIndex = 2
+    reportBugButton.Visible = true
+    reportBugButton.Parent = reportBugFrame
+
+    reportBugFrame.MouseEnter:Connect(function()
+        reportBugFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    end)
+    reportBugFrame.MouseLeave:Connect(function()
+        reportBugFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    end)
+
+    reportBugButton.MouseButton1Click:Connect(function()
+        local discordUsername = "dckrzw"
+        pcall(function()
+            setclipboard(discordUsername)
+            createNotification(
+                "Report Bug",
+                "Discord username '" .. discordUsername .. "' copied to clipboard!",
+                "success"
+            )
+        end)
+    end)
+    
+    print("TipStatsGUI: Report Bug button created and added to settings")
     
     -- Force canvas size update after all elements are added
     task.wait(0.2)
@@ -6851,8 +6917,11 @@ spawn(function()
         end
         local connection = player.Chatted:Connect(function(message)
             if scriptRunning then
-                print("TipStatsGUI: Legacy chat received:", message) -- Debug
-                checkAndExecute(message)
+                -- Only execute commands if this is the local player
+                if player == Players.LocalPlayer then
+                    print("TipStatsGUI: Legacy chat received from local player:", message) -- Debug
+                    checkAndExecute(message)
+                end
             end
         end)
         print("TipStatsGUI: Hooked legacy chat for player:", player.Name)
@@ -6950,12 +7019,11 @@ spawn(function()
         end
         legacyConnected = true
         local success, err = pcall(function()
-            hookLegacyChat(chatLocalPlayer)
-            Players.PlayerAdded:Connect(function(player)
-                if scriptRunning then
-                    hookLegacyChat(player)
-                end
-            end)
+            -- Only hook legacy chat for local player
+            if chatLocalPlayer then
+                hookLegacyChat(chatLocalPlayer)
+            end
+            -- Don't hook for other players - we only want local player commands
         end)
         if success then
             print("TipStatsGUI: Legacy chat detection initialized")

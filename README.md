@@ -116,6 +116,6 @@ Future features planned for upcoming releases.
 
 ## Version
 
-Current Version: 0.9.2beta
+Current Version: 0.9.3beta
 
 Includes automatic version checking with notifications for updates or when newer versions are running.
