@@ -110,3 +110,5 @@ Current Version: 0.9.2beta
 
 Includes automatic version checking with notifications for updates or when newer versions are running.
 
+
+
