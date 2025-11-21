@@ -56,7 +56,7 @@ Comprehensive settings with customization options:
 
 - Notification Settings: Control donation notification behavior.
 
-All settings automatically save and load on script start.
+Settings automatically save and load on script start.
 
 ### Chat Command System
 
@@ -98,17 +98,20 @@ Version tracking ensures only one script instance runs. When newer versions are 
 
 ## Technical Details
 
-Utilizes multiple Roblox services including Players, TweenService, RunService, Workspace, TextService, HttpService, TextChatService, MarketplaceService, ReplicatedStorage, TeleportService, UserInputService, and GuiService. Implements connection tracking, error handling with pcall, and efficient PropertyChangedSignal updates. Data persists through Roblox storage with automatic saving. Cleanup functions restore all modified game state.
+Utilizes multiple Roblox services including Players, TweenService, RunService, Workspace, TextService, HttpService, TextChatService, MarketplaceService, ReplicatedStorage, TeleportService, UserInputService, and GuiService. Implements connection tracking, error handling with pcall, and efficient PropertyChangedSignal updates. Data persists through Roblox storage. Cleanup functions restore all modified game state.
 
 ## Usage
 
-Execute in a Roblox executor. GUI appears automatically showing all players and tip statistics. Use search to filter, click players for info panels, and access settings via settings button. Features accessible through GUI or chat commands.
+Execute in a Roblox executor. GUI appears automatically showing all players and tip statistics. Use search to filter, click players for info panels, and access settings via settings button.
+
+## Roadmap
+
+Future features:
+
+- Report Bug Button: Quick access in settings to report bugs with Discord contact.
 
 ## Version
 
 Current Version: 0.9.2beta
 
 Includes automatic version checking with notifications for updates or when newer versions are running.
-
-
-
