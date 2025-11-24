@@ -1,3 +1,8 @@
+###Working already on the new winter update UI.
+new features have to wait for the update.
+
+
+
 # TipStatsGUI
 
 A comprehensive Roblox script providing an advanced GUI interface for tracking player tip statistics with extensive utility features for player interaction and game automation.
