@@ -1,5 +1,5 @@
-###Working already on the new winter update UI.
-new features have to wait for the update.
+#Working already on the new winter update UI. Latest release was with the new Groups update.
+
 
 
 
