@@ -45,6 +45,13 @@ Sophisticated donation detection system monitors changes to player TipJarStats v
 
 Save and teleport to custom locations. The Location Hub provides buttons for saving current position, loading saved locations, and quick teleportation. Location data persists across sessions.
 
+**Groups Tab** - Windows-style tab system showing player groups:
+- Detects groups of 2+ players within 30 studs proximity
+- Displays player avatars using Roblox headshot API
+- Voice chat indicators showing who is speaking in real-time
+- Teleport to group center functionality
+- Background refresh system with seamless updates (no visual flicker)
+
 ### Settings Panel
 
 Comprehensive settings with customization options:
@@ -75,9 +82,21 @@ Monitors chat for commands:
 
 Works with both legacy chat and TextChatService for compatibility.
 
-### Buzzer Auto-Click
+### Leaderboard Integration
 
-Automatically clicks buzzer objects when within 32 studs range. Scans for buzzer tables in workspace and interacts automatically with cooldown protection.
+**Donated Leaderboard Notifications** - Automatically checks the leaderboard for players currently in your server:
+- Scans all 100 leaderboard entries
+- Displays notifications when leaderboard players are detected
+- Shows player rank and username
+- Includes teleport button for quick access
+
+**Minutes Leaderboard Notifications** - Checks playtime leaderboard for players in server:
+- Scans all 100 leaderboard entries
+- Displays notifications with rank, username, and playtime (minutes)
+- Shows minutes played for each detected player
+- Includes teleport button
+
+Notifications appear where quick info usually displays and check every 5-7 seconds. Each player is notified only once per session.
 
 ### AFK Tag Management
 
@@ -150,6 +169,16 @@ Future features planned for upcoming releases:
 
 ## Version
 
-Current Version: 1.2.0release
+Current Version: 1.3.0released
 
 Includes automatic version checking with notifications for updates or when newer versions are running.
+
+### Version 1.3.0released Changelog
+
+- Added Leaderboard Player Notification System (Donated & Minutes leaderboards)
+- Added Location Hub Groups Tab with player group detection
+- Added 3D avatar display using Roblox headshot API
+- Added voice chat indicators for speaking players
+- Added group teleportation functionality
+- Improved background refresh system for seamless updates
+- Optimized UI updates to prevent visual flicker

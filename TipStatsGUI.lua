@@ -2,7 +2,7 @@
 -- Displays all players' TipJarStats.Donated values in a scrollable list
 
 -- Version system to ensure only one instance runs at a time
-local SCRIPT_VERSION = "1.2.0release"
+local SCRIPT_VERSION = "1.3.0released"
 
 -- Function to compare version strings (e.g., "0.5beta" vs "0.6beta" or "0.5.1beta")
 local function compareVersions(version1, version2)
@@ -67,6 +67,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TeleportService = game:GetService("TeleportService")
 local UserInputService = game:GetService("UserInputService")
 local GuiService = game:GetService("GuiService")
+local VoiceChatService = game:GetService("VoiceChatService")
 
 -- Version check and cleanup system
 local versionTrackerName = "TipStatsGUI_VersionTracker"
@@ -670,6 +671,12 @@ local donationNotifications = {}
 local previousDonations = {} -- Track previous donation values for each player
 local previousReceived = {} -- Track previous received values for each player
 local notificationContainer = nil
+donationNotifications.leaderboardNotified = {}
+donationNotifications.leaderboardActive = {}
+donationNotifications.leaderboardCounter = 0
+donationNotifications.minutesNotified = {}
+donationNotifications.minutesActive = {}
+donationNotifications.minutesCounter = 0
 
 -- Unified notification system
 local function createNotification(title, message, notificationType, actionButton, actionCallback)
@@ -3769,32 +3776,183 @@ local function createLocationHub()
         end)
     end)
     
-    -- Content area (matching main UI scrolling frame)
-    local hubContent = Instance.new("ScrollingFrame")
-    hubContent.Name = "Content"
-    hubContent.Size = UDim2.new(1, -20, 1, -65)
-    hubContent.Position = UDim2.new(0, 10, 0, 55)
-    hubContent.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-    hubContent.BorderSizePixel = 0
-    hubContent.ScrollBarThickness = 6
-    hubContent.ScrollBarImageColor3 = Color3.fromRGB(40, 40, 40)
-    hubContent.Parent = locationHubUI
+    -- Tab bar (Windows-style tabs)
+    local tabBar = Instance.new("Frame")
+    tabBar.Name = "TabBar"
+    tabBar.Size = UDim2.new(1, 0, 0, 35)
+    tabBar.Position = UDim2.new(0, 0, 0, 45)
+    tabBar.BackgroundColor3 = Color3.fromRGB(12, 12, 12)
+    tabBar.BorderSizePixel = 0
+    tabBar.Parent = locationHubUI
     
-    local hubContentCorner = Instance.new("UICorner")
-    hubContentCorner.CornerRadius = UDim.new(0, 6)
-    hubContentCorner.Parent = hubContent
+    local tabBarLayout = Instance.new("UIListLayout")
+    tabBarLayout.FillDirection = Enum.FillDirection.Horizontal
+    tabBarLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+    tabBarLayout.Padding = UDim.new(0, 2)
+    tabBarLayout.Parent = tabBar
     
-    local hubLayout = Instance.new("UIListLayout")
-    hubLayout.Padding = UDim.new(0, 4)
-    hubLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    hubLayout.Parent = hubContent
+    local tabBarPadding = Instance.new("UIPadding")
+    tabBarPadding.PaddingLeft = UDim.new(0, 2)
+    tabBarPadding.PaddingRight = UDim.new(0, 2)
+    tabBarPadding.PaddingTop = UDim.new(0, 2)
+    tabBarPadding.PaddingBottom = UDim.new(0, 2)
+    tabBarPadding.Parent = tabBar
     
-    local hubPadding = Instance.new("UIPadding")
-    hubPadding.PaddingTop = UDim.new(0, 5)
-    hubPadding.PaddingBottom = UDim.new(0, 5)
-    hubPadding.PaddingLeft = UDim.new(0, 0)
-    hubPadding.PaddingRight = UDim.new(0, 0)
-    hubPadding.Parent = hubContent
+    -- Tab state
+    local activeTab = "Locations"
+    local locationsContent = nil
+    local groupsContent = nil
+    
+    -- Function to create tab button
+    local function createTabButton(tabName, isActive)
+        local tabButton = Instance.new("TextButton")
+        tabButton.Name = tabName .. "Tab"
+        tabButton.Size = UDim2.new(0.5, -3, 1, -4)
+        tabButton.BackgroundColor3 = isActive and Color3.fromRGB(20, 20, 20) or Color3.fromRGB(12, 12, 12)
+        tabButton.BorderSizePixel = 0
+        tabButton.Text = tabName
+        tabButton.TextColor3 = isActive and Color3.fromRGB(240, 240, 240) or Color3.fromRGB(150, 150, 150)
+        tabButton.TextSize = 14
+        tabButton.Font = Enum.Font.GothamSemibold
+        tabButton.Parent = tabBar
+        
+        local tabCorner = Instance.new("UICorner")
+        tabCorner.CornerRadius = UDim.new(0, 6)
+        tabCorner.Parent = tabButton
+        
+        -- Active tab indicator (bottom border)
+        if isActive then
+            local activeIndicator = Instance.new("Frame")
+            activeIndicator.Name = "ActiveIndicator"
+            activeIndicator.Size = UDim2.new(1, 0, 0, 3)
+            activeIndicator.Position = UDim2.new(0, 0, 1, -3)
+            activeIndicator.BackgroundColor3 = Color3.fromRGB(100, 150, 255)
+            activeIndicator.BorderSizePixel = 0
+            activeIndicator.Parent = tabButton
+            
+            local indicatorCorner = Instance.new("UICorner")
+            indicatorCorner.CornerRadius = UDim.new(0, 2)
+            indicatorCorner.Parent = activeIndicator
+        end
+        
+        tabButton.MouseEnter:Connect(function()
+            if not isActive then
+                tabButton.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+            end
+        end)
+        
+        tabButton.MouseLeave:Connect(function()
+            if not isActive then
+                tabButton.BackgroundColor3 = Color3.fromRGB(12, 12, 12)
+            end
+        end)
+        
+        tabButton.MouseButton1Click:Connect(function()
+            if activeTab == tabName then
+                return
+            end
+            
+            -- Update active tab
+            activeTab = tabName
+            
+            -- Update all tabs
+            for _, child in ipairs(tabBar:GetChildren()) do
+                if child:IsA("TextButton") then
+                    local isNowActive = child.Name == (tabName .. "Tab")
+                    child.BackgroundColor3 = isNowActive and Color3.fromRGB(20, 20, 20) or Color3.fromRGB(12, 12, 12)
+                    child.TextColor3 = isNowActive and Color3.fromRGB(240, 240, 240) or Color3.fromRGB(150, 150, 150)
+                    
+                    -- Update active indicator
+                    local indicator = child:FindFirstChild("ActiveIndicator")
+                    if isNowActive and not indicator then
+                        indicator = Instance.new("Frame")
+                        indicator.Name = "ActiveIndicator"
+                        indicator.Size = UDim2.new(1, 0, 0, 3)
+                        indicator.Position = UDim2.new(0, 0, 1, -3)
+                        indicator.BackgroundColor3 = Color3.fromRGB(100, 150, 255)
+                        indicator.BorderSizePixel = 0
+                        indicator.Parent = child
+                        
+                        local indicatorCorner = Instance.new("UICorner")
+                        indicatorCorner.CornerRadius = UDim.new(0, 2)
+                        indicatorCorner.Parent = indicator
+                    elseif not isNowActive and indicator then
+                        indicator:Destroy()
+                    end
+                end
+            end
+            
+            -- Show/hide content
+            if locationsContent then
+                locationsContent.Visible = (tabName == "Locations")
+            end
+            if groupsContent then
+                groupsContent.Visible = (tabName == "Groups")
+            end
+        end)
+        
+        return tabButton
+    end
+    
+    -- Create tabs
+    createTabButton("Locations", true)
+    createTabButton("Groups", false)
+    
+    -- Content area (matching main UI scrolling frame) - Locations tab
+    locationsContent = Instance.new("ScrollingFrame")
+    locationsContent.Name = "LocationsContent"
+    locationsContent.Size = UDim2.new(1, -20, 1, -100)
+    locationsContent.Position = UDim2.new(0, 10, 0, 80)
+    locationsContent.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+    locationsContent.BorderSizePixel = 0
+    locationsContent.ScrollBarThickness = 6
+    locationsContent.ScrollBarImageColor3 = Color3.fromRGB(40, 40, 40)
+    locationsContent.Visible = true
+    locationsContent.Parent = locationHubUI
+    
+    local locationsContentCorner = Instance.new("UICorner")
+    locationsContentCorner.CornerRadius = UDim.new(0, 6)
+    locationsContentCorner.Parent = locationsContent
+    
+    local locationsLayout = Instance.new("UIListLayout")
+    locationsLayout.Padding = UDim.new(0, 4)
+    locationsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    locationsLayout.Parent = locationsContent
+    
+    local locationsPadding = Instance.new("UIPadding")
+    locationsPadding.PaddingTop = UDim.new(0, 5)
+    locationsPadding.PaddingBottom = UDim.new(0, 5)
+    locationsPadding.PaddingLeft = UDim.new(0, 0)
+    locationsPadding.PaddingRight = UDim.new(0, 0)
+    locationsPadding.Parent = locationsContent
+    
+    -- Groups content area
+    groupsContent = Instance.new("ScrollingFrame")
+    groupsContent.Name = "GroupsContent"
+    groupsContent.Size = UDim2.new(1, -20, 1, -100)
+    groupsContent.Position = UDim2.new(0, 10, 0, 80)
+    groupsContent.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+    groupsContent.BorderSizePixel = 0
+    groupsContent.ScrollBarThickness = 6
+    groupsContent.ScrollBarImageColor3 = Color3.fromRGB(40, 40, 40)
+    groupsContent.Visible = false
+    groupsContent.Parent = locationHubUI
+    
+    local groupsContentCorner = Instance.new("UICorner")
+    groupsContentCorner.CornerRadius = UDim.new(0, 6)
+    groupsContentCorner.Parent = groupsContent
+    
+    local groupsLayout = Instance.new("UIListLayout")
+    groupsLayout.Padding = UDim.new(0, 8)
+    groupsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    groupsLayout.Parent = groupsContent
+    
+    local groupsPadding = Instance.new("UIPadding")
+    groupsPadding.PaddingTop = UDim.new(0, 5)
+    groupsPadding.PaddingBottom = UDim.new(0, 5)
+    groupsPadding.PaddingLeft = UDim.new(0, 5)
+    groupsPadding.PaddingRight = UDim.new(0, 5)
+    groupsPadding.Parent = groupsContent
     
     -- Define locations
     local locations = {
@@ -3815,7 +3973,7 @@ local function createLocationHub()
         locationButton.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
         locationButton.BorderSizePixel = 0
         locationButton.Text = ""
-        locationButton.Parent = hubContent
+        locationButton.Parent = locationsContent
         locationButton.LayoutOrder = index
         
         local buttonCorner = Instance.new("UICorner")
@@ -3921,16 +4079,557 @@ local function createLocationHub()
         createLocationButton(locationData, i)
     end
     
-    -- Update canvas size
-    hubLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        local contentSize = hubLayout.AbsoluteContentSize
-        hubContent.CanvasSize = UDim2.new(0, 0, 0, contentSize.Y + 10)
+    -- Update canvas size for locations
+    locationsLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        local contentSize = locationsLayout.AbsoluteContentSize
+        locationsContent.CanvasSize = UDim2.new(0, 0, 0, contentSize.Y + 10)
     end)
     
-    -- Initial canvas size
+    -- Initial canvas size for locations
     task.wait()
-    local contentSize = hubLayout.AbsoluteContentSize
-    hubContent.CanvasSize = UDim2.new(0, 0, 0, contentSize.Y + 10)
+    local locationsContentSize = locationsLayout.AbsoluteContentSize
+    locationsContent.CanvasSize = UDim2.new(0, 0, 0, locationsContentSize.Y + 10)
+    
+    -- Groups detection and display system
+    local GROUP_DETECTION_DISTANCE = 30
+    local groupDetectionCounter = 0
+    local activeGroupContainers = {} -- Keyed by group signature (sorted user IDs)
+    local playerVoiceStates = {}
+    local avatarViewports = {}
+    
+    -- Function to get group signature (for comparison)
+    local function getGroupSignature(group)
+        local userIds = {}
+        for _, player in ipairs(group) do
+            table.insert(userIds, player.UserId)
+        end
+        table.sort(userIds)
+        return table.concat(userIds, ",")
+    end
+    
+    -- Function to detect player groups
+    local function detectPlayerGroups()
+        local groups = {}
+        local players = Players:GetPlayers()
+        local processed = {}
+        
+        for _, player in ipairs(players) do
+            if processed[player] then
+                continue
+            end
+            
+            local playerRoot = nil
+            if player.Character then
+                playerRoot = getRoot(player.Character)
+            end
+            
+            if not playerRoot then
+                continue
+            end
+            
+            local group = {player}
+            processed[player] = true
+            
+            -- Find all players within 30 studs
+            for _, otherPlayer in ipairs(players) do
+                if processed[otherPlayer] or otherPlayer == player then
+                    continue
+                end
+                
+                if otherPlayer.Character then
+                    local otherRoot = getRoot(otherPlayer.Character)
+                    if otherRoot then
+                        local distance = (playerRoot.Position - otherRoot.Position).Magnitude
+                        if distance <= GROUP_DETECTION_DISTANCE then
+                            table.insert(group, otherPlayer)
+                            processed[otherPlayer] = true
+                        end
+                    end
+                end
+            end
+            
+            -- Only add groups with 2+ players
+            if #group >= 2 then
+                table.insert(groups, group)
+            end
+        end
+        
+        return groups
+    end
+    
+    -- Function to calculate group center
+    local function calculateGroupCenter(group)
+        local totalPos = Vector3.new(0, 0, 0)
+        local count = 0
+        
+        for _, player in ipairs(group) do
+            if player.Character then
+                local root = getRoot(player.Character)
+                if root then
+                    totalPos = totalPos + root.Position
+                    count = count + 1
+                end
+            end
+        end
+        
+        if count > 0 then
+            return totalPos / count
+        end
+        return nil
+    end
+    
+    -- Function to create player avatar (using headshot API)
+    local function createPlayerAvatar(player, parentFrame)
+        -- Create avatar image label
+        local avatarImage = Instance.new("ImageLabel")
+        avatarImage.Name = "Avatar_" .. player.UserId
+        avatarImage.Size = UDim2.new(0, 60, 0, 60)
+        avatarImage.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        avatarImage.BorderSizePixel = 0
+        avatarImage.Image = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. player.UserId .. "&width=150&height=150&format=png"
+        avatarImage.Parent = parentFrame
+        
+        local avatarCorner = Instance.new("UICorner")
+        avatarCorner.CornerRadius = UDim.new(0, 8)
+        avatarCorner.Parent = avatarImage
+        
+        local avatarBorder = Instance.new("UIStroke")
+        avatarBorder.Color = Color3.fromRGB(60, 60, 60)
+        avatarBorder.Thickness = 1
+        avatarBorder.Transparency = 0.3
+        avatarBorder.Parent = avatarImage
+        
+        return avatarImage
+    end
+    
+    -- Function to setup voice chat detection
+    local function setupVoiceChatDetection(player)
+        if playerVoiceStates[player.UserId] then
+            return
+        end
+        
+        playerVoiceStates[player.UserId] = {
+            isSpeaking = false,
+            isMuted = false
+        }
+        
+        pcall(function()
+            if VoiceChatService then
+                local success, participant = pcall(function()
+                    return VoiceChatService:GetPlayerAsync(player.UserId)
+                end)
+                
+                if success and participant then
+                    participant.StateChanged:Connect(function()
+                        local newState = participant.State
+                        if playerVoiceStates[player.UserId] then
+                            playerVoiceStates[player.UserId].isSpeaking = (newState == Enum.VoiceChatState.Speaking)
+                            playerVoiceStates[player.UserId].isMuted = (newState == Enum.VoiceChatState.Muted)
+                        end
+                    end)
+                end
+            end
+        end)
+    end
+    
+    -- Function to create group container
+    local function createGroupContainer(group, groupIndex)
+        local groupContainer = Instance.new("Frame")
+        groupContainer.Name = "Group_" .. groupIndex
+        groupContainer.Size = UDim2.new(1, 0, 0, 0)
+        groupContainer.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+        groupContainer.BorderSizePixel = 0
+        groupContainer.Parent = groupsContent
+        groupContainer.LayoutOrder = groupIndex
+        
+        local groupCorner = Instance.new("UICorner")
+        groupCorner.CornerRadius = UDim.new(0, 8)
+        groupCorner.Parent = groupContainer
+        
+        local groupBorder = Instance.new("UIStroke")
+        groupBorder.Color = Color3.fromRGB(60, 60, 60)
+        groupBorder.Thickness = 1
+        groupBorder.Transparency = 0.3
+        groupBorder.Parent = groupContainer
+        
+        -- Group header
+        local groupHeader = Instance.new("Frame")
+        groupHeader.Name = "Header"
+        groupHeader.Size = UDim2.new(1, 0, 0, 35)
+        groupHeader.BackgroundTransparency = 1
+        groupHeader.Parent = groupContainer
+        
+        local playerCountLabel = Instance.new("TextLabel")
+        playerCountLabel.Name = "PlayerCount"
+        playerCountLabel.Size = UDim2.new(1, -100, 1, 0)
+        playerCountLabel.Position = UDim2.new(0, 10, 0, 0)
+        playerCountLabel.BackgroundTransparency = 1
+        playerCountLabel.Text = #group .. " Players"
+        playerCountLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        playerCountLabel.TextSize = 15
+        playerCountLabel.Font = Enum.Font.GothamBold
+        playerCountLabel.TextXAlignment = Enum.TextXAlignment.Left
+        playerCountLabel.Parent = groupHeader
+        
+        -- Teleport button
+        local teleportBtn = Instance.new("TextButton")
+        teleportBtn.Name = "TeleportButton"
+        teleportBtn.Size = UDim2.new(0, 80, 0, 28)
+        teleportBtn.Position = UDim2.new(1, -90, 0, 3.5)
+        teleportBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        teleportBtn.Text = "Teleport"
+        teleportBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
+        teleportBtn.TextSize = 13
+        teleportBtn.Font = Enum.Font.GothamSemibold
+        teleportBtn.BorderSizePixel = 0
+        teleportBtn.Parent = groupHeader
+        
+        local teleportCorner = Instance.new("UICorner")
+        teleportCorner.CornerRadius = UDim.new(0, 6)
+        teleportCorner.Parent = teleportBtn
+        
+        local teleportBorder = Instance.new("UIStroke")
+        teleportBorder.Color = Color3.fromRGB(60, 60, 60)
+        teleportBorder.Thickness = 1
+        teleportBorder.Transparency = 0.3
+        teleportBorder.Parent = teleportBtn
+        
+        teleportBtn.MouseEnter:Connect(function()
+            teleportBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+        end)
+        
+        teleportBtn.MouseLeave:Connect(function()
+            teleportBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        end)
+        
+        -- Teleport functionality (uses current group data from container)
+        teleportBtn.MouseButton1Click:Connect(function()
+            -- Get current group from container's stored players
+            local currentGroup = {}
+            local avatarsContainer = groupContainer:FindFirstChild("AvatarsContainer")
+            if avatarsContainer then
+                for _, child in ipairs(avatarsContainer:GetChildren()) do
+                    if child:IsA("Frame") and child.Name:match("^Player_") then
+                        local userId = tonumber(child.Name:match("Player_(%d+)"))
+                        if userId then
+                            local player = Players:GetPlayerByUserId(userId)
+                            if player then
+                                table.insert(currentGroup, player)
+                            end
+                        end
+                    end
+                end
+            end
+            
+            -- Fallback to original group if no players found
+            if #currentGroup == 0 then
+                currentGroup = group
+            end
+            
+            local groupCenter = calculateGroupCenter(currentGroup)
+            if groupCenter then
+                local localPlayer = Players.LocalPlayer
+                if localPlayer and localPlayer.Character then
+                    local root = getRoot(localPlayer.Character)
+                    if root then
+                        root.CFrame = CFrame.new(groupCenter)
+                    end
+                end
+            end
+        end)
+        
+        -- Avatars container
+        local avatarsContainer = Instance.new("Frame")
+        avatarsContainer.Name = "AvatarsContainer"
+        avatarsContainer.Size = UDim2.new(1, -20, 0, 0)
+        avatarsContainer.Position = UDim2.new(0, 10, 0, 40)
+        avatarsContainer.BackgroundTransparency = 1
+        avatarsContainer.Parent = groupContainer
+        
+        local avatarsLayout = Instance.new("UIListLayout")
+        avatarsLayout.FillDirection = Enum.FillDirection.Horizontal
+        avatarsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+        avatarsLayout.Padding = UDim.new(0, 8)
+        avatarsLayout.Parent = avatarsContainer
+        
+        -- Create avatar for each player
+        for _, player in ipairs(group) do
+            setupVoiceChatDetection(player)
+            
+            local playerFrame = Instance.new("Frame")
+            playerFrame.Name = "Player_" .. player.UserId
+            playerFrame.Size = UDim2.new(0, 60, 0, 85)
+            playerFrame.BackgroundTransparency = 1
+            playerFrame.Parent = avatarsContainer
+            
+            -- Avatar image (using headshot API)
+            local avatarImage = createPlayerAvatar(player, playerFrame)
+            avatarImage.Position = UDim2.new(0, 0, 0, 0)
+            
+            -- Voice chat indicator
+            local vcIndicator = Instance.new("Frame")
+            vcIndicator.Name = "VCIndicator"
+            vcIndicator.Size = UDim2.new(0, 20, 0, 20)
+            vcIndicator.Position = UDim2.new(1, -20, 0, 0)
+            vcIndicator.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+            vcIndicator.BorderSizePixel = 0
+            vcIndicator.Visible = false
+            vcIndicator.Parent = avatarImage
+            
+            local vcCorner = Instance.new("UICorner")
+            vcCorner.CornerRadius = UDim.new(0, 10)
+            vcCorner.Parent = vcIndicator
+            
+            local vcIcon = Instance.new("TextLabel")
+            vcIcon.Name = "Icon"
+            vcIcon.Size = UDim2.new(1, 0, 1, 0)
+            vcIcon.BackgroundTransparency = 1
+            vcIcon.Text = "🎤"
+            vcIcon.TextSize = 14
+            vcIcon.Font = Enum.Font.GothamBold
+            vcIcon.Parent = vcIndicator
+            
+            -- Update VC indicator
+            local function updateVCIndicator()
+                local voiceState = playerVoiceStates[player.UserId]
+                if voiceState and voiceState.isSpeaking then
+                    vcIndicator.Visible = true
+                else
+                    vcIndicator.Visible = false
+                end
+            end
+            
+            -- Check VC state periodically
+            task.spawn(function()
+                while playerFrame.Parent do
+                    updateVCIndicator()
+                    task.wait(0.1)
+                end
+            end)
+            
+            -- Player name
+            local nameLabel = Instance.new("TextLabel")
+            nameLabel.Name = "NameLabel"
+            nameLabel.Size = UDim2.new(1, 0, 0, 20)
+            nameLabel.Position = UDim2.new(0, 0, 1, -20)
+            nameLabel.BackgroundTransparency = 1
+            nameLabel.Text = player.Name
+            nameLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+            nameLabel.TextSize = 11
+            nameLabel.Font = Enum.Font.Gotham
+            nameLabel.TextXAlignment = Enum.TextXAlignment.Center
+            nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+            nameLabel.Parent = playerFrame
+        end
+        
+        -- Update avatars container size
+        task.wait()
+        local avatarsSize = avatarsLayout.AbsoluteContentSize
+        avatarsContainer.Size = UDim2.new(1, -20, 0, avatarsSize.Y)
+        groupContainer.Size = UDim2.new(1, 0, 0, 40 + avatarsSize.Y + 5)
+        
+        avatarsLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+            local newSize = avatarsLayout.AbsoluteContentSize
+            avatarsContainer.Size = UDim2.new(1, -20, 0, newSize.Y)
+            groupContainer.Size = UDim2.new(1, 0, 0, 40 + newSize.Y + 5)
+        end)
+        
+        activeGroupContainers[groupIndex] = groupContainer
+        
+        return groupContainer
+    end
+    
+    -- Function to get group signature (for comparison)
+    local function getGroupSignature(group)
+        local userIds = {}
+        for _, player in ipairs(group) do
+            table.insert(userIds, player.UserId)
+        end
+        table.sort(userIds)
+        return table.concat(userIds, ",")
+    end
+    
+    -- Helper function to create a single player avatar frame
+    local function createPlayerFrame(player, parentContainer)
+        setupVoiceChatDetection(player)
+        
+        local playerFrame = Instance.new("Frame")
+        playerFrame.Name = "Player_" .. player.UserId
+        playerFrame.Size = UDim2.new(0, 60, 0, 85)
+        playerFrame.BackgroundTransparency = 1
+        playerFrame.Parent = parentContainer
+        
+        local avatarImage = createPlayerAvatar(player, playerFrame)
+        avatarImage.Position = UDim2.new(0, 0, 0, 0)
+        
+        local vcIndicator = Instance.new("Frame")
+        vcIndicator.Name = "VCIndicator"
+        vcIndicator.Size = UDim2.new(0, 20, 0, 20)
+        vcIndicator.Position = UDim2.new(1, -20, 0, 0)
+        vcIndicator.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+        vcIndicator.BorderSizePixel = 0
+        vcIndicator.Visible = false
+        vcIndicator.Parent = avatarImage
+        
+        local vcCorner = Instance.new("UICorner")
+        vcCorner.CornerRadius = UDim.new(0, 10)
+        vcCorner.Parent = vcIndicator
+        
+        local vcIcon = Instance.new("TextLabel")
+        vcIcon.Name = "Icon"
+        vcIcon.Size = UDim2.new(1, 0, 1, 0)
+        vcIcon.BackgroundTransparency = 1
+        vcIcon.Text = "🎤"
+        vcIcon.TextSize = 14
+        vcIcon.Font = Enum.Font.GothamBold
+        vcIcon.Parent = vcIndicator
+        
+        local function updateVCIndicator()
+            local voiceState = playerVoiceStates[player.UserId]
+            if voiceState and voiceState.isSpeaking then
+                vcIndicator.Visible = true
+            else
+                vcIndicator.Visible = false
+            end
+        end
+        
+        task.spawn(function()
+            while playerFrame.Parent do
+                updateVCIndicator()
+                task.wait(0.1)
+            end
+        end)
+        
+        local nameLabel = Instance.new("TextLabel")
+        nameLabel.Name = "NameLabel"
+        nameLabel.Size = UDim2.new(1, 0, 0, 20)
+        nameLabel.Position = UDim2.new(0, 0, 1, -20)
+        nameLabel.BackgroundTransparency = 1
+        nameLabel.Text = player.Name
+        nameLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+        nameLabel.TextSize = 11
+        nameLabel.Font = Enum.Font.Gotham
+        nameLabel.TextXAlignment = Enum.TextXAlignment.Center
+        nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+        nameLabel.Parent = playerFrame
+        
+        return playerFrame
+    end
+    
+    -- Function to update groups display (truly incremental - only changes what actually changed)
+    local function updateGroupsDisplay()
+        -- Save scroll position FIRST before any changes
+        local savedScrollPosition = groupsContent.CanvasPosition.Y
+        
+        -- Detect groups
+        local groups = detectPlayerGroups()
+        
+        -- Create signature map for new groups
+        local newGroupSignatures = {}
+        for i, group in ipairs(groups) do
+            local signature = getGroupSignature(group)
+            newGroupSignatures[signature] = {group = group, index = i}
+        end
+        
+        -- Find existing groups that should be removed
+        local groupsToRemove = {}
+        for signature, container in pairs(activeGroupContainers) do
+            if not newGroupSignatures[signature] then
+                table.insert(groupsToRemove, signature)
+            end
+        end
+        
+        -- Remove groups that no longer exist
+        for _, signature in ipairs(groupsToRemove) do
+            local container = activeGroupContainers[signature]
+            if container and container.Parent then
+                container:Destroy()
+            end
+            activeGroupContainers[signature] = nil
+        end
+        
+        -- Update or create groups
+        for signature, groupData in pairs(newGroupSignatures) do
+            local existingContainer = activeGroupContainers[signature]
+            
+            if existingContainer and existingContainer.Parent then
+                -- Only update if something actually changed
+                local avatarsContainer = existingContainer:FindFirstChild("AvatarsContainer")
+                if avatarsContainer then
+                    -- Get existing player user IDs
+                    local existingPlayerIds = {}
+                    for _, child in ipairs(avatarsContainer:GetChildren()) do
+                        if child:IsA("Frame") and child.Name:match("^Player_") then
+                            local userId = tonumber(child.Name:match("Player_(%d+)"))
+                            if userId then
+                                existingPlayerIds[userId] = child
+                            end
+                        end
+                    end
+                    
+                    -- Get new player user IDs
+                    local newPlayerIds = {}
+                    for _, player in ipairs(groupData.group) do
+                        newPlayerIds[player.UserId] = player
+                    end
+                    
+                    -- Only remove players that actually left (don't touch anything else)
+                    for userId, playerFrame in pairs(existingPlayerIds) do
+                        if not newPlayerIds[userId] then
+                            playerFrame:Destroy()
+                        end
+                    end
+                    
+                    -- Only add players that actually joined (don't recreate existing ones)
+                    for userId, player in pairs(newPlayerIds) do
+                        if not existingPlayerIds[userId] then
+                            createPlayerFrame(player, avatarsContainer)
+                        end
+                    end
+                    
+                    -- Update player count only if it changed
+                    local header = existingContainer:FindFirstChild("Header")
+                    if header then
+                        local playerCountLabel = header:FindFirstChild("PlayerCount")
+                        if playerCountLabel then
+                            local newCount = #groupData.group
+                            if playerCountLabel.Text ~= newCount .. " Players" then
+                                playerCountLabel.Text = newCount .. " Players"
+                            end
+                        end
+                    end
+                end
+            else
+                -- Create new container
+                local container = createGroupContainer(groupData.group, groupData.index)
+                activeGroupContainers[signature] = container
+            end
+        end
+        
+        -- Update canvas size only if needed (check if it actually changed)
+        local groupsContentSize = groupsLayout.AbsoluteContentSize
+        local newCanvasSize = groupsContentSize.Y + 10
+        if groupsContent.CanvasSize.Y.Offset ~= newCanvasSize then
+            groupsContent.CanvasSize = UDim2.new(0, 0, 0, newCanvasSize)
+            -- Only restore scroll if canvas size changed
+            task.wait() -- Wait one frame for canvas size to apply
+            local maxScroll = math.max(0, groupsContent.CanvasSize.Y.Offset - groupsContent.AbsoluteSize.Y)
+            local restoredPosition = math.min(savedScrollPosition, maxScroll)
+            groupsContent.CanvasPosition = Vector2.new(0, restoredPosition)
+        end
+    end
+    
+    -- Update groups periodically (removed AbsoluteContentSize connection to prevent scroll jumps)
+    
+    -- Start group detection loop
+    task.spawn(function()
+        while locationHubUI and locationHubUI.Parent do
+            if activeTab == "Groups" then
+                updateGroupsDisplay()
+            end
+            task.wait(1.5) -- Check every 1.5 seconds
+        end
+    end)
     
     -- Animate in
     local targetPosition = savedLocationHubPosition or UDim2.new(0.5, -200, 0.5, -250)
@@ -6290,6 +6989,453 @@ local function setHoveredPlayer(newPlayer)
     end)
 end
 
+-- Leaderboard Player Notification System (using existing tables, 0 new locals)
+donationNotifications.checkLeaderboardForPlayers = function()
+    donationNotifications.leaderboardCheckSuccess, donationNotifications.leaderboardCheckResult = pcall(function()
+        donationNotifications.leaderboardTemp = workspace:FindFirstChild("Map")
+        if not donationNotifications.leaderboardTemp then return {} end
+        donationNotifications.leaderboardTemp = donationNotifications.leaderboardTemp:FindFirstChild("POI")
+        if not donationNotifications.leaderboardTemp then return {} end
+        donationNotifications.leaderboardTemp = donationNotifications.leaderboardTemp:FindFirstChild("Leaderboards")
+        if not donationNotifications.leaderboardTemp then return {} end
+        donationNotifications.leaderboardTemp = donationNotifications.leaderboardTemp:FindFirstChild("Donated")
+        if not donationNotifications.leaderboardTemp then return {} end
+        donationNotifications.leaderboardTemp = donationNotifications.leaderboardTemp:FindFirstChild("Board")
+        if not donationNotifications.leaderboardTemp then return {} end
+        donationNotifications.leaderboardTemp = donationNotifications.leaderboardTemp:FindFirstChild("SurfaceGui")
+        if not donationNotifications.leaderboardTemp then return {} end
+        donationNotifications.leaderboardTemp = donationNotifications.leaderboardTemp:FindFirstChild("Frame")
+        if not donationNotifications.leaderboardTemp then return {} end
+        donationNotifications.leaderboardTemp = donationNotifications.leaderboardTemp:FindFirstChild("List")
+        if not donationNotifications.leaderboardTemp then return {} end
+        donationNotifications.leaderboardMatches = {}
+        donationNotifications.leaderboardPlayers = Players:GetPlayers()
+        donationNotifications.leaderboardNames = {}
+        donationNotifications.leaderboardI = 1
+        while donationNotifications.leaderboardI <= #donationNotifications.leaderboardPlayers do
+            donationNotifications.leaderboardNames[donationNotifications.leaderboardPlayers[donationNotifications.leaderboardI].Name:lower()] = donationNotifications.leaderboardPlayers[donationNotifications.leaderboardI]
+            donationNotifications.leaderboardI = donationNotifications.leaderboardI + 1
+        end
+        donationNotifications.leaderboardI = 1
+        while donationNotifications.leaderboardI <= 100 do
+            donationNotifications.leaderboardKey = tostring(donationNotifications.leaderboardI)
+            donationNotifications.leaderboardItem = donationNotifications.leaderboardTemp:FindFirstChild(donationNotifications.leaderboardKey)
+            if donationNotifications.leaderboardItem then
+                donationNotifications.leaderboardUsernameFrame = donationNotifications.leaderboardItem:FindFirstChild("Username")
+                if donationNotifications.leaderboardUsernameFrame then
+                    donationNotifications.leaderboardUsernameLabel = donationNotifications.leaderboardUsernameFrame:FindFirstChild("Username")
+                    if donationNotifications.leaderboardUsernameLabel and donationNotifications.leaderboardUsernameLabel:IsA("TextLabel") then
+                        donationNotifications.leaderboardUsername = donationNotifications.leaderboardUsernameLabel.Text
+                        if donationNotifications.leaderboardUsername and donationNotifications.leaderboardUsername ~= "" then
+                            donationNotifications.leaderboardPlaceFrame = donationNotifications.leaderboardItem:FindFirstChild("Place")
+                            if donationNotifications.leaderboardPlaceFrame and donationNotifications.leaderboardPlaceFrame:IsA("TextLabel") then
+                                donationNotifications.leaderboardPlace = donationNotifications.leaderboardPlaceFrame.Text
+                                donationNotifications.leaderboardPlayer = donationNotifications.leaderboardNames[donationNotifications.leaderboardUsername:lower()]
+                                if donationNotifications.leaderboardPlayer then
+                                    table.insert(donationNotifications.leaderboardMatches, {
+                                        player = donationNotifications.leaderboardPlayer,
+                                        place = donationNotifications.leaderboardPlace,
+                                        username = donationNotifications.leaderboardUsername
+                                    })
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            donationNotifications.leaderboardI = donationNotifications.leaderboardI + 1
+        end
+        return donationNotifications.leaderboardMatches
+    end)
+    if donationNotifications.leaderboardCheckSuccess then
+        return donationNotifications.leaderboardCheckResult or {}
+    else
+        return {}
+    end
+end
+
+donationNotifications.createLeaderboardNotification = function()
+    donationNotifications.leaderboardPlayer = donationNotifications.createLeaderboardNotificationPlayer
+    donationNotifications.leaderboardPlace = donationNotifications.createLeaderboardNotificationPlace
+    if not donationNotifications.leaderboardPlayer or not donationNotifications.leaderboardPlayer.Parent then
+        return
+    end
+    if donationNotifications.leaderboardActive[donationNotifications.leaderboardPlayer.UserId] then
+        return
+    end
+    donationNotifications.leaderboardActiveCount = 0
+    donationNotifications.leaderboardTemp = next(donationNotifications.leaderboardActive)
+    while donationNotifications.leaderboardTemp do
+        donationNotifications.leaderboardActiveCount = donationNotifications.leaderboardActiveCount + 1
+        donationNotifications.leaderboardTemp = next(donationNotifications.leaderboardActive, donationNotifications.leaderboardTemp)
+    end
+    donationNotifications.leaderboardNotificationFrame = Instance.new("Frame")
+    donationNotifications.leaderboardNotificationFrame.Name = "LeaderboardNotification_" .. donationNotifications.leaderboardPlayer.UserId
+    donationNotifications.leaderboardNotificationFrame.Size = UDim2.new(0, 350, 0, 60)
+    donationNotifications.leaderboardNotificationFrame.AnchorPoint = Vector2.new(0.5, 1)
+    donationNotifications.leaderboardNotificationFrame.Position = UDim2.new(0.5, 0, 1, -120 - (donationNotifications.leaderboardActiveCount * 70))
+    donationNotifications.leaderboardNotificationFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    donationNotifications.leaderboardNotificationFrame.BackgroundTransparency = 0
+    donationNotifications.leaderboardNotificationFrame.BorderSizePixel = 0
+    donationNotifications.leaderboardNotificationFrame.Visible = true
+    donationNotifications.leaderboardNotificationFrame.Parent = screenGui
+    donationNotifications.leaderboardNotificationFrame.ZIndex = 51
+    donationNotifications.leaderboardNotificationCorner = Instance.new("UICorner")
+    donationNotifications.leaderboardNotificationCorner.CornerRadius = UDim.new(0, 10)
+    donationNotifications.leaderboardNotificationCorner.Parent = donationNotifications.leaderboardNotificationFrame
+    donationNotifications.leaderboardNotificationStroke = Instance.new("UIStroke")
+    donationNotifications.leaderboardNotificationStroke.Color = Color3.fromRGB(60, 60, 60)
+    donationNotifications.leaderboardNotificationStroke.Thickness = 1
+    donationNotifications.leaderboardNotificationStroke.Transparency = 0.3
+    donationNotifications.leaderboardNotificationStroke.Parent = donationNotifications.leaderboardNotificationFrame
+    donationNotifications.leaderboardNotificationLabel = Instance.new("TextLabel")
+    donationNotifications.leaderboardNotificationLabel.Name = "NotificationText"
+    donationNotifications.leaderboardNotificationLabel.Size = UDim2.new(1, -80, 1, 0)
+    donationNotifications.leaderboardNotificationLabel.Position = UDim2.new(0, 15, 0, 0)
+    donationNotifications.leaderboardNotificationLabel.BackgroundTransparency = 1
+    donationNotifications.leaderboardNotificationLabel.Text = "[" .. donationNotifications.leaderboardPlace .. "] " .. donationNotifications.leaderboardPlayer.Name .. " is in your server!"
+    donationNotifications.leaderboardNotificationLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    donationNotifications.leaderboardNotificationLabel.TextSize = 16
+    donationNotifications.leaderboardNotificationLabel.Font = Enum.Font.GothamBold
+    donationNotifications.leaderboardNotificationLabel.TextXAlignment = Enum.TextXAlignment.Left
+    donationNotifications.leaderboardNotificationLabel.TextWrapped = true
+    donationNotifications.leaderboardNotificationLabel.Parent = donationNotifications.leaderboardNotificationFrame
+    donationNotifications.leaderboardTeleportButton = Instance.new("TextButton")
+    donationNotifications.leaderboardTeleportButton.Name = "TeleportButton"
+    donationNotifications.leaderboardTeleportButton.Size = UDim2.new(0, 22, 0, 22)
+    donationNotifications.leaderboardTeleportButton.Position = UDim2.new(1, -32, 0.5, -11)
+    donationNotifications.leaderboardTeleportButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    donationNotifications.leaderboardTeleportButton.Text = "→"
+    donationNotifications.leaderboardTeleportButton.TextColor3 = Color3.fromRGB(220, 220, 220)
+    donationNotifications.leaderboardTeleportButton.TextSize = 14
+    donationNotifications.leaderboardTeleportButton.Font = Enum.Font.GothamBold
+    donationNotifications.leaderboardTeleportButton.BorderSizePixel = 0
+    donationNotifications.leaderboardTeleportButton.Parent = donationNotifications.leaderboardNotificationFrame
+    donationNotifications.leaderboardTeleportCorner = Instance.new("UICorner")
+    donationNotifications.leaderboardTeleportCorner.CornerRadius = UDim.new(0, 4)
+    donationNotifications.leaderboardTeleportCorner.Parent = donationNotifications.leaderboardTeleportButton
+    donationNotifications.leaderboardTeleportBorder = Instance.new("UIStroke")
+    donationNotifications.leaderboardTeleportBorder.Color = Color3.fromRGB(60, 60, 60)
+    donationNotifications.leaderboardTeleportBorder.Thickness = 1
+    donationNotifications.leaderboardTeleportBorder.Transparency = 0.3
+    donationNotifications.leaderboardTeleportBorder.Parent = donationNotifications.leaderboardTeleportButton
+    donationNotifications.leaderboardTeleportButton.MouseEnter:Connect(function()
+        donationNotifications.leaderboardTeleportButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+    end)
+    donationNotifications.leaderboardTeleportButton.MouseLeave:Connect(function()
+        donationNotifications.leaderboardTeleportButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    end)
+    donationNotifications.leaderboardTeleportButton.MouseButton1Click:Connect(function()
+        if donationNotifications.leaderboardPlayer.Character then
+            donationNotifications.leaderboardRoot = getRoot(donationNotifications.leaderboardPlayer.Character)
+            donationNotifications.leaderboardLocalPlayer = Players.LocalPlayer
+            if donationNotifications.leaderboardRoot and donationNotifications.leaderboardLocalPlayer and donationNotifications.leaderboardLocalPlayer.Character then
+                donationNotifications.leaderboardLocalRoot = getRoot(donationNotifications.leaderboardLocalPlayer.Character)
+                if donationNotifications.leaderboardLocalRoot then
+                    donationNotifications.leaderboardLocalRoot.CFrame = donationNotifications.leaderboardRoot.CFrame
+                end
+            end
+        end
+    end)
+    donationNotifications.leaderboardActive[donationNotifications.leaderboardPlayer.UserId] = donationNotifications.leaderboardNotificationFrame
+    donationNotifications.leaderboardNotificationFrame.Size = UDim2.new(0, 0, 0, 60)
+    donationNotifications.leaderboardSizeTween = TweenService:Create(
+        donationNotifications.leaderboardNotificationFrame,
+        TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        {Size = UDim2.new(0, 350, 0, 60)}
+    )
+    donationNotifications.leaderboardSizeTween:Play()
+    task.spawn(function()
+        task.wait(8)
+        if donationNotifications.leaderboardNotificationFrame.Parent then
+            donationNotifications.leaderboardFadeTween = TweenService:Create(
+                donationNotifications.leaderboardNotificationFrame,
+                TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+                {BackgroundTransparency = 1, Size = UDim2.new(0, 0, 0, 60)}
+            )
+            if donationNotifications.leaderboardNotificationLabel then
+                donationNotifications.leaderboardTextFade = TweenService:Create(
+                    donationNotifications.leaderboardNotificationLabel,
+                    TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+                    {TextTransparency = 1}
+                )
+                donationNotifications.leaderboardTextFade:Play()
+            end
+            donationNotifications.leaderboardFadeTween:Play()
+            donationNotifications.leaderboardFadeTween.Completed:Wait()
+            if donationNotifications.leaderboardNotificationFrame.Parent then
+                donationNotifications.leaderboardNotificationFrame:Destroy()
+            end
+            donationNotifications.leaderboardActive[donationNotifications.leaderboardPlayer.UserId] = nil
+        end
+    end)
+    donationNotifications.leaderboardPlayer.AncestryChanged:Connect(function()
+        if not donationNotifications.leaderboardPlayer.Parent then
+            if donationNotifications.leaderboardActive[donationNotifications.leaderboardPlayer.UserId] then
+                donationNotifications.leaderboardActive[donationNotifications.leaderboardPlayer.UserId]:Destroy()
+                donationNotifications.leaderboardActive[donationNotifications.leaderboardPlayer.UserId] = nil
+            end
+        end
+    end)
+    donationNotifications.leaderboardNotificationFrame.Destroying:Connect(function()
+        donationNotifications.leaderboardActive[donationNotifications.leaderboardPlayer.UserId] = nil
+    end)
+end
+
+donationNotifications.processLeaderboardMatches = function()
+    donationNotifications.leaderboardCheckSuccess, donationNotifications.leaderboardCheckResult = donationNotifications.checkLeaderboardForPlayers()
+    if donationNotifications.leaderboardCheckSuccess and donationNotifications.leaderboardCheckResult then
+        donationNotifications.leaderboardI = 1
+        while donationNotifications.leaderboardI <= #donationNotifications.leaderboardCheckResult do
+            donationNotifications.leaderboardMatch = donationNotifications.leaderboardCheckResult[donationNotifications.leaderboardI]
+            if donationNotifications.leaderboardMatch.player and donationNotifications.leaderboardMatch.place and donationNotifications.leaderboardMatch.username then
+                if not donationNotifications.leaderboardNotified[donationNotifications.leaderboardMatch.player.UserId] then
+                    donationNotifications.leaderboardNotified[donationNotifications.leaderboardMatch.player.UserId] = true
+                    donationNotifications.createLeaderboardNotificationPlayer = donationNotifications.leaderboardMatch.player
+                    donationNotifications.createLeaderboardNotificationPlace = donationNotifications.leaderboardMatch.place
+                    donationNotifications.createLeaderboardNotification()
+                end
+            end
+            donationNotifications.leaderboardI = donationNotifications.leaderboardI + 1
+        end
+    end
+end
+
+donationNotifications.startLeaderboardChecking = function()
+    task.wait(2)
+    donationNotifications.processLeaderboardMatches()
+    donationNotifications.processMinutesMatches()
+    trackConnection(RunService.Heartbeat:Connect(function()
+        donationNotifications.leaderboardCounter = donationNotifications.leaderboardCounter + 1
+        if donationNotifications.leaderboardCounter >= 420 then
+            donationNotifications.leaderboardCounter = 0
+            donationNotifications.processLeaderboardMatches()
+            donationNotifications.processMinutesMatches()
+        end
+    end))
+end
+
+-- Minutes Leaderboard Notification System (using existing tables, 0 new locals)
+donationNotifications.checkMinutesForPlayers = function()
+    donationNotifications.minutesCheckSuccess, donationNotifications.minutesCheckResult = pcall(function()
+        donationNotifications.minutesTemp = workspace:FindFirstChild("Map")
+        if not donationNotifications.minutesTemp then return {} end
+        donationNotifications.minutesTemp = donationNotifications.minutesTemp:FindFirstChild("POI")
+        if not donationNotifications.minutesTemp then return {} end
+        donationNotifications.minutesTemp = donationNotifications.minutesTemp:FindFirstChild("Leaderboards")
+        if not donationNotifications.minutesTemp then return {} end
+        donationNotifications.minutesTemp = donationNotifications.minutesTemp:FindFirstChild("Minutes")
+        if not donationNotifications.minutesTemp then return {} end
+        donationNotifications.minutesTemp = donationNotifications.minutesTemp:FindFirstChild("Board")
+        if not donationNotifications.minutesTemp then return {} end
+        donationNotifications.minutesTemp = donationNotifications.minutesTemp:FindFirstChild("SurfaceGui")
+        if not donationNotifications.minutesTemp then return {} end
+        donationNotifications.minutesTemp = donationNotifications.minutesTemp:FindFirstChild("Frame")
+        if not donationNotifications.minutesTemp then return {} end
+        donationNotifications.minutesTemp = donationNotifications.minutesTemp:FindFirstChild("List")
+        if not donationNotifications.minutesTemp then return {} end
+        donationNotifications.minutesMatches = {}
+        donationNotifications.minutesPlayers = Players:GetPlayers()
+        donationNotifications.minutesNames = {}
+        donationNotifications.minutesI = 1
+        while donationNotifications.minutesI <= #donationNotifications.minutesPlayers do
+            donationNotifications.minutesNames[donationNotifications.minutesPlayers[donationNotifications.minutesI].Name:lower()] = donationNotifications.minutesPlayers[donationNotifications.minutesI]
+            donationNotifications.minutesI = donationNotifications.minutesI + 1
+        end
+        donationNotifications.minutesI = 1
+        while donationNotifications.minutesI <= 100 do
+            donationNotifications.minutesKey = tostring(donationNotifications.minutesI)
+            donationNotifications.minutesItem = donationNotifications.minutesTemp:FindFirstChild(donationNotifications.minutesKey)
+            if donationNotifications.minutesItem then
+                donationNotifications.minutesAmountFrame = donationNotifications.minutesItem:FindFirstChild("Amount")
+                if donationNotifications.minutesAmountFrame and donationNotifications.minutesAmountFrame:IsA("TextLabel") then
+                    donationNotifications.minutesAmount = donationNotifications.minutesAmountFrame.Text
+                    donationNotifications.minutesPlaceFrame = donationNotifications.minutesItem:FindFirstChild("Place")
+                    if donationNotifications.minutesPlaceFrame and donationNotifications.minutesPlaceFrame:IsA("TextLabel") then
+                        donationNotifications.minutesPlace = donationNotifications.minutesPlaceFrame.Text
+                        donationNotifications.minutesUsernameFrame = donationNotifications.minutesItem:FindFirstChild("Username")
+                        if donationNotifications.minutesUsernameFrame then
+                            donationNotifications.minutesUsernameLabel = donationNotifications.minutesUsernameFrame:FindFirstChild("Username")
+                            if donationNotifications.minutesUsernameLabel and donationNotifications.minutesUsernameLabel:IsA("TextLabel") then
+                                donationNotifications.minutesUsername = donationNotifications.minutesUsernameLabel.Text
+                                if donationNotifications.minutesUsername and donationNotifications.minutesUsername ~= "" then
+                                    donationNotifications.minutesPlayer = donationNotifications.minutesNames[donationNotifications.minutesUsername:lower()]
+                                    if donationNotifications.minutesPlayer then
+                                        table.insert(donationNotifications.minutesMatches, {
+                                            player = donationNotifications.minutesPlayer,
+                                            place = donationNotifications.minutesPlace,
+                                            amount = donationNotifications.minutesAmount,
+                                            username = donationNotifications.minutesUsername
+                                        })
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            donationNotifications.minutesI = donationNotifications.minutesI + 1
+        end
+        return donationNotifications.minutesMatches
+    end)
+    if donationNotifications.minutesCheckSuccess then
+        return donationNotifications.minutesCheckResult or {}
+    else
+        return {}
+    end
+end
+
+donationNotifications.createMinutesNotification = function()
+    donationNotifications.minutesPlayer = donationNotifications.createMinutesNotificationPlayer
+    donationNotifications.minutesPlace = donationNotifications.createMinutesNotificationPlace
+    donationNotifications.minutesAmount = donationNotifications.createMinutesNotificationAmount
+    if not donationNotifications.minutesPlayer or not donationNotifications.minutesPlayer.Parent then
+        return
+    end
+    if donationNotifications.minutesActive[donationNotifications.minutesPlayer.UserId] then
+        return
+    end
+    donationNotifications.minutesActiveCount = 0
+    donationNotifications.minutesTemp = next(donationNotifications.minutesActive)
+    while donationNotifications.minutesTemp do
+        donationNotifications.minutesActiveCount = donationNotifications.minutesActiveCount + 1
+        donationNotifications.minutesTemp = next(donationNotifications.minutesActive, donationNotifications.minutesTemp)
+    end
+    donationNotifications.minutesNotificationFrame = Instance.new("Frame")
+    donationNotifications.minutesNotificationFrame.Name = "MinutesNotification_" .. donationNotifications.minutesPlayer.UserId
+    donationNotifications.minutesNotificationFrame.Size = UDim2.new(0, 350, 0, 60)
+    donationNotifications.minutesNotificationFrame.AnchorPoint = Vector2.new(0.5, 1)
+    donationNotifications.minutesNotificationFrame.Position = UDim2.new(0.5, 0, 1, -120 - (donationNotifications.minutesActiveCount * 70))
+    donationNotifications.minutesNotificationFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    donationNotifications.minutesNotificationFrame.BackgroundTransparency = 0
+    donationNotifications.minutesNotificationFrame.BorderSizePixel = 0
+    donationNotifications.minutesNotificationFrame.Visible = true
+    donationNotifications.minutesNotificationFrame.Parent = screenGui
+    donationNotifications.minutesNotificationFrame.ZIndex = 51
+    donationNotifications.minutesNotificationCorner = Instance.new("UICorner")
+    donationNotifications.minutesNotificationCorner.CornerRadius = UDim.new(0, 10)
+    donationNotifications.minutesNotificationCorner.Parent = donationNotifications.minutesNotificationFrame
+    donationNotifications.minutesNotificationStroke = Instance.new("UIStroke")
+    donationNotifications.minutesNotificationStroke.Color = Color3.fromRGB(60, 60, 60)
+    donationNotifications.minutesNotificationStroke.Thickness = 1
+    donationNotifications.minutesNotificationStroke.Transparency = 0.3
+    donationNotifications.minutesNotificationStroke.Parent = donationNotifications.minutesNotificationFrame
+    donationNotifications.minutesNotificationLabel = Instance.new("TextLabel")
+    donationNotifications.minutesNotificationLabel.Name = "NotificationText"
+    donationNotifications.minutesNotificationLabel.Size = UDim2.new(1, -80, 1, 0)
+    donationNotifications.minutesNotificationLabel.Position = UDim2.new(0, 15, 0, 0)
+    donationNotifications.minutesNotificationLabel.BackgroundTransparency = 1
+    donationNotifications.minutesNotificationLabel.Text = "[" .. donationNotifications.minutesPlace .. "] " .. donationNotifications.minutesPlayer.Name .. " (" .. donationNotifications.minutesAmount .. " min) is in your server!"
+    donationNotifications.minutesNotificationLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    donationNotifications.minutesNotificationLabel.TextSize = 16
+    donationNotifications.minutesNotificationLabel.Font = Enum.Font.GothamBold
+    donationNotifications.minutesNotificationLabel.TextXAlignment = Enum.TextXAlignment.Left
+    donationNotifications.minutesNotificationLabel.TextWrapped = true
+    donationNotifications.minutesNotificationLabel.Parent = donationNotifications.minutesNotificationFrame
+    donationNotifications.minutesTeleportButton = Instance.new("TextButton")
+    donationNotifications.minutesTeleportButton.Name = "TeleportButton"
+    donationNotifications.minutesTeleportButton.Size = UDim2.new(0, 22, 0, 22)
+    donationNotifications.minutesTeleportButton.Position = UDim2.new(1, -32, 0.5, -11)
+    donationNotifications.minutesTeleportButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    donationNotifications.minutesTeleportButton.Text = "→"
+    donationNotifications.minutesTeleportButton.TextColor3 = Color3.fromRGB(220, 220, 220)
+    donationNotifications.minutesTeleportButton.TextSize = 14
+    donationNotifications.minutesTeleportButton.Font = Enum.Font.GothamBold
+    donationNotifications.minutesTeleportButton.BorderSizePixel = 0
+    donationNotifications.minutesTeleportButton.Parent = donationNotifications.minutesNotificationFrame
+    donationNotifications.minutesTeleportCorner = Instance.new("UICorner")
+    donationNotifications.minutesTeleportCorner.CornerRadius = UDim.new(0, 4)
+    donationNotifications.minutesTeleportCorner.Parent = donationNotifications.minutesTeleportButton
+    donationNotifications.minutesTeleportBorder = Instance.new("UIStroke")
+    donationNotifications.minutesTeleportBorder.Color = Color3.fromRGB(60, 60, 60)
+    donationNotifications.minutesTeleportBorder.Thickness = 1
+    donationNotifications.minutesTeleportBorder.Transparency = 0.3
+    donationNotifications.minutesTeleportBorder.Parent = donationNotifications.minutesTeleportButton
+    donationNotifications.minutesTeleportButton.MouseEnter:Connect(function()
+        donationNotifications.minutesTeleportButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+    end)
+    donationNotifications.minutesTeleportButton.MouseLeave:Connect(function()
+        donationNotifications.minutesTeleportButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    end)
+    donationNotifications.minutesTeleportButton.MouseButton1Click:Connect(function()
+        if donationNotifications.minutesPlayer.Character then
+            donationNotifications.minutesRoot = getRoot(donationNotifications.minutesPlayer.Character)
+            donationNotifications.minutesLocalPlayer = Players.LocalPlayer
+            if donationNotifications.minutesRoot and donationNotifications.minutesLocalPlayer and donationNotifications.minutesLocalPlayer.Character then
+                donationNotifications.minutesLocalRoot = getRoot(donationNotifications.minutesLocalPlayer.Character)
+                if donationNotifications.minutesLocalRoot then
+                    donationNotifications.minutesLocalRoot.CFrame = donationNotifications.minutesRoot.CFrame
+                end
+            end
+        end
+    end)
+    donationNotifications.minutesActive[donationNotifications.minutesPlayer.UserId] = donationNotifications.minutesNotificationFrame
+    donationNotifications.minutesNotificationFrame.Size = UDim2.new(0, 0, 0, 60)
+    donationNotifications.minutesSizeTween = TweenService:Create(
+        donationNotifications.minutesNotificationFrame,
+        TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        {Size = UDim2.new(0, 350, 0, 60)}
+    )
+    donationNotifications.minutesSizeTween:Play()
+    task.spawn(function()
+        task.wait(8)
+        if donationNotifications.minutesNotificationFrame.Parent then
+            donationNotifications.minutesFadeTween = TweenService:Create(
+                donationNotifications.minutesNotificationFrame,
+                TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+                {BackgroundTransparency = 1, Size = UDim2.new(0, 0, 0, 60)}
+            )
+            if donationNotifications.minutesNotificationLabel then
+                donationNotifications.minutesTextFade = TweenService:Create(
+                    donationNotifications.minutesNotificationLabel,
+                    TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+                    {TextTransparency = 1}
+                )
+                donationNotifications.minutesTextFade:Play()
+            end
+            donationNotifications.minutesFadeTween:Play()
+            donationNotifications.minutesFadeTween.Completed:Wait()
+            if donationNotifications.minutesNotificationFrame.Parent then
+                donationNotifications.minutesNotificationFrame:Destroy()
+            end
+            donationNotifications.minutesActive[donationNotifications.minutesPlayer.UserId] = nil
+        end
+    end)
+    donationNotifications.minutesPlayer.AncestryChanged:Connect(function()
+        if not donationNotifications.minutesPlayer.Parent then
+            if donationNotifications.minutesActive[donationNotifications.minutesPlayer.UserId] then
+                donationNotifications.minutesActive[donationNotifications.minutesPlayer.UserId]:Destroy()
+                donationNotifications.minutesActive[donationNotifications.minutesPlayer.UserId] = nil
+            end
+        end
+    end)
+    donationNotifications.minutesNotificationFrame.Destroying:Connect(function()
+        donationNotifications.minutesActive[donationNotifications.minutesPlayer.UserId] = nil
+    end)
+end
+
+donationNotifications.processMinutesMatches = function()
+    donationNotifications.minutesCheckSuccess, donationNotifications.minutesCheckResult = donationNotifications.checkMinutesForPlayers()
+    if donationNotifications.minutesCheckSuccess and donationNotifications.minutesCheckResult then
+        donationNotifications.minutesI = 1
+        while donationNotifications.minutesI <= #donationNotifications.minutesCheckResult do
+            donationNotifications.minutesMatch = donationNotifications.minutesCheckResult[donationNotifications.minutesI]
+            if donationNotifications.minutesMatch.player and donationNotifications.minutesMatch.place and donationNotifications.minutesMatch.amount and donationNotifications.minutesMatch.username then
+                if not donationNotifications.minutesNotified[donationNotifications.minutesMatch.player.UserId] then
+                    donationNotifications.minutesNotified[donationNotifications.minutesMatch.player.UserId] = true
+                    donationNotifications.createMinutesNotificationPlayer = donationNotifications.minutesMatch.player
+                    donationNotifications.createMinutesNotificationPlace = donationNotifications.minutesMatch.place
+                    donationNotifications.createMinutesNotificationAmount = donationNotifications.minutesMatch.amount
+                    donationNotifications.createMinutesNotification()
+                end
+            end
+            donationNotifications.minutesI = donationNotifications.minutesI + 1
+        end
+    end
+end
+
+task.spawn(donationNotifications.startLeaderboardChecking)
+
 local function evaluateHoverTarget()
     if not scriptRunning then
         return
@@ -7038,7 +8184,15 @@ local function createPlayerEntry(player)
                 donated = tipJarStats:FindFirstChild("Donated")
             end
             if donated then
-                donated:GetPropertyChangedSignal("Value"):Connect(updateDonated)
+                donated:GetPropertyChangedSignal("Value"):Connect(function()
+                    updateDonated()
+                    -- Re-sort the list when donation changes
+                    if searchTextBox and searchTextBox.Text then
+                        updateList(searchTextBox.Text)
+                    else
+                        updateList("")
+                    end
+                end)
             else
                 -- Wait for Donated to potentially be created
                 local success, result = pcall(function()
@@ -7047,7 +8201,15 @@ local function createPlayerEntry(player)
                 if success and result then
                     donated = result
                     updateDonated()
-                    donated:GetPropertyChangedSignal("Value"):Connect(updateDonated)
+                    donated:GetPropertyChangedSignal("Value"):Connect(function()
+                        updateDonated()
+                        -- Re-sort the list when donation changes
+                        if searchTextBox and searchTextBox.Text then
+                            updateList(searchTextBox.Text)
+                        else
+                            updateList("")
+                        end
+                    end)
                 end
             end
         end
@@ -7879,100 +9041,6 @@ spawn(function()
     print("TipStatsGUI: Chat detection system fully initialized")
 end)
 
--- Buzzer detection and auto-click system
-spawn(function()
-    if not scriptRunning then
-        return
-    end
-    
-    local BUZZER_DETECTION_DISTANCE = 32
-    local buzzerCheckInterval = 0.1 -- Check every 0.1 seconds
-    local lastBuzzerClickTime = {}
-    
-    local function findBuzzerTables()
-        local buzzerTables = {}
-        local tableGames = Workspace:FindFirstChild("Map")
-        if tableGames then
-            tableGames = tableGames:FindFirstChild("Decoration")
-            if tableGames then
-                tableGames = tableGames:FindFirstChild("TableGames")
-                if tableGames then
-                    for _, child in ipairs(tableGames:GetChildren()) do
-                        local buzzer = child:FindFirstChild("Buzzer")
-                        if buzzer then
-                            local clickDetector = buzzer:FindFirstChild("ClickDetector")
-                            if clickDetector then
-                                table.insert(buzzerTables, {
-                                    buzzer = buzzer,
-                                    clickDetector = clickDetector,
-                                    table = child
-                                })
-                            end
-                        end
-                    end
-                end
-            end
-        end
-        return buzzerTables
-    end
-    
-    local function getBuzzerPosition(buzzerData)
-        if buzzerData.buzzer and buzzerData.buzzer:IsA("BasePart") then
-            return buzzerData.buzzer.Position
-        elseif buzzerData.buzzer then
-            local primaryPart = buzzerData.buzzer:FindFirstChildOfClass("BasePart")
-            if primaryPart then
-                return primaryPart.Position
-            end
-        end
-        return nil
-    end
-    
-    while scriptRunning do
-        task.wait(buzzerCheckInterval)
-        
-        if not scriptRunning then
-            return
-        end
-        
-        if not clientPlayer or not clientPlayer.Character then
-            continue
-        end
-        
-        local localRoot = getRoot(clientPlayer.Character)
-        if not localRoot then
-            continue
-        end
-        
-        local buzzerTables = findBuzzerTables()
-        for _, buzzerData in ipairs(buzzerTables) do
-            if not buzzerData.clickDetector or not buzzerData.clickDetector.Parent then
-                continue
-            end
-            
-            local buzzerPos = getBuzzerPosition(buzzerData)
-            if not buzzerPos then
-                continue
-            end
-            
-            local distance = (localRoot.Position - buzzerPos).Magnitude
-            if distance <= BUZZER_DETECTION_DISTANCE then
-                -- Check cooldown (prevent spam clicking)
-                local buzzerId = tostring(buzzerData.clickDetector)
-                local lastClick = lastBuzzerClickTime[buzzerId] or 0
-                local currentTime = tick()
-                
-                -- Click every 0.5 seconds when in range
-                if currentTime - lastClick >= 0.5 then
-                    pcall(function()
-                        buzzerData.clickDetector:Click()
-                        lastBuzzerClickTime[buzzerId] = currentTime
-                    end)
-                end
-            end
-        end
-    end
-end)
 
 print("Tip Stats GUI loaded successfully!")
 

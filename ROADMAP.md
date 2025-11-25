@@ -43,6 +43,12 @@ This document tracks the development progress of TipStatsGUI, including complete
 - **Load Locations** - Load saved locations from storage
 - **Quick Teleportation** - Instant teleport to saved locations
 - **Persistent Storage** - Location data persists across sessions
+- **Groups Tab** - Windows-style tab system showing player groups
+  - Detects groups of 2+ players within 30 studs
+  - Displays player avatars using Roblox headshot API
+  - Voice chat indicators showing who is speaking
+  - Teleport to group center functionality
+  - Background refresh system with seamless updates
 
 ### Settings Panel
 - **Hover Range Configuration** - Adjust distance for player info panel appearance
@@ -59,14 +65,21 @@ This document tracks the development progress of TipStatsGUI, including complete
 - **Server Hop Command** - Type `%serverhop` to find and join different server
 - **Dual Chat Support** - Works with both legacy chat and TextChatService
 
-### Automation Features
-- **Buzzer Auto-Click** - Automatically clicks buzzer objects within 32 studs range
-  - Scans for buzzer tables in workspace
-  - Automatic interaction with cooldown protection
-- **AFK Tag Management** - Automatically disables AFK tags for all players
-  - Runs on startup
-  - Continues for new players
-  - Prevents AFK detection issues
+### Leaderboard Integration
+- **Donated Leaderboard Notifications** - Checks leaderboard for players in current server
+  - Scans all 100 leaderboard entries
+  - Displays notifications when leaderboard players are detected
+  - Shows player rank and username
+  - Teleport button to leaderboard players
+- **Minutes Leaderboard Notifications** - Checks playtime leaderboard for players in server
+  - Scans all 100 leaderboard entries
+  - Displays notifications with rank, username, and playtime
+  - Shows minutes played for each detected player
+  - Teleport button to leaderboard players
+- **Notification System** - Custom notification UI replacing hover info
+  - Appears where quick info usually displays
+  - One-time notifications per player per session
+  - Automatic checks every 5-7 seconds
 
 ### Version Management
 - **Version Tracking** - Ensures only one script instance runs
@@ -145,7 +158,7 @@ _No features currently in progress_
 
 ---
 
-**Last Updated:** Based on Version 1.2.0release
+**Last Updated:** Based on Version 1.3.0released
 
 **Note:** This roadmap is subject to change based on user feedback and development priorities.
 
