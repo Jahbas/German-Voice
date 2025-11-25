@@ -1,6 +1,9 @@
 -- Tip Stats GUI Script
 -- Displays all players' TipJarStats.Donated values in a scrollable list
 
+-- Disable all output
+print = function() end
+
 -- Version system to ensure only one instance runs at a time
 local SCRIPT_VERSION = "1.3.0released"
 
@@ -77,9 +80,9 @@ if versionTracker then
     local existingVersion = versionTracker:GetAttribute("Version") or "0"
     local comparison = compareVersions(existingVersion, SCRIPT_VERSION)
     
-    if comparison >= 0 then
-        -- A newer or equal version is already running, clean up and exit
-        print("TipStatsGUI: A newer or equal version (" .. tostring(existingVersion) .. ") is already running. Exiting this instance.")
+    if comparison > 0 then
+        -- A newer version is already running, clean up and exit
+        print("TipStatsGUI: A newer version (" .. tostring(existingVersion) .. ") is already running. Exiting this instance.")
         
         -- Clean up any existing UIs from this instance
         pcall(function()
@@ -90,6 +93,21 @@ if versionTracker then
         end)
         
         return -- Exit script
+    elseif comparison == 0 then
+        -- Same version is already running, close old UI and open new one
+        print("TipStatsGUI: Same version (" .. tostring(existingVersion) .. ") detected. Closing old UI and opening new one.")
+        
+        -- Clean up any existing UIs from the old instance
+        pcall(function()
+            local existingScreenGui = Players.LocalPlayer:FindFirstChild("PlayerGui"):FindFirstChild("TipStatsGUI")
+            if existingScreenGui then
+                existingScreenGui:Destroy()
+            end
+        end)
+        
+        -- Update the tracker and continue
+        versionTracker:SetAttribute("Version", SCRIPT_VERSION)
+        print("TipStatsGUI: Updated to version " .. tostring(SCRIPT_VERSION))
     else
         -- This version is newer, update the tracker
         versionTracker:SetAttribute("Version", SCRIPT_VERSION)
@@ -1666,6 +1684,9 @@ local function collectPlayerProfileData(player)
         profileData.stats.credits = 0
     end
     
+    -- Collect Account Age
+    profileData.stats.accountAge = player.AccountAge
+    
     -- Collect Settings
     local settings = player:FindFirstChild("Settings")
     if settings then
@@ -1706,6 +1727,40 @@ local function collectPlayerProfileData(player)
     -- Note: Chat messages are NOT included in profile data
     -- They are saved separately to messages.json to reduce lag
     -- Chat messages are loaded separately in loadPlayerProfile() and merged for display
+    
+    -- Initialize sessionInfo structure
+    profileData.sessionInfo = {}
+    profileData.sessionInfo.localPlayerPresent = true
+    profileData.sessionInfo.sessionStartTime = getCurrentTimestamp()
+    profileData.sessionInfo.playersInSession = {}
+    
+    -- Populate playersInSession using existing loop variable pattern
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p and p.Parent then
+            table.insert(profileData.sessionInfo.playersInSession, p.Name)
+        end
+    end
+    
+    -- Read previous profile entries for playtime comparison (reuse backpack variable, no new locals)
+    profileData.stats.lastSeenPlaytime = 0
+    profileData.stats.playtimeDifference = 0
+    profileData.stats.playtimeWhileAway = 0
+    
+    if readfile and isfile and pcall(function()
+        if isfile(PROFILE_BASE_FOLDER .. "/" .. player.Name .. "/profile.json") then
+            backpack = readfile(PROFILE_BASE_FOLDER .. "/" .. player.Name .. "/profile.json")
+            if backpack and backpack ~= "" then
+                if pcall(function()
+                    backpack = HttpService:JSONDecode(backpack)
+                end) and backpack and type(backpack) == "table" and #backpack > 0 then
+                    profileData.stats.lastSeenPlaytime = (backpack[#backpack].stats and backpack[#backpack].stats.playtime) or 0
+                    profileData.stats.playtimeDifference = profileData.stats.playtime - profileData.stats.lastSeenPlaytime
+                    profileData.stats.playtimeWhileAway = ((backpack[#backpack].sessionInfo and backpack[#backpack].sessionInfo.localPlayerPresent) and 0 or profileData.stats.playtimeDifference)
+                end
+            end
+        end
+    end) then
+    end
     
     return profileData
 end
