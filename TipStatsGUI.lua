@@ -1620,8 +1620,7 @@ local function prettyPrintJSON(jsonString)
 end
 
 -- Function to collect all player profile data
--- playersInSessionList: optional cached list of player names to avoid redundant iteration
-local function collectPlayerProfileData(player, playersInSessionList)
+local function collectPlayerProfileData(player)
     if not player or not player.Parent then
         return nil
     end
@@ -1643,26 +1642,47 @@ local function collectPlayerProfileData(player, playersInSessionList)
         local donated = tipJarStats.Donated or tipJarStats:FindFirstChild("Donated")
         local received = tipJarStats.Raised or tipJarStats:FindFirstChild("Raised")
         
-        profileData.stats.donated = (donated and (donated:IsA("IntValue") or donated:IsA("NumberValue")) and donated.Value) or 0
-        profileData.stats.received = (received and (received:IsA("IntValue") or received:IsA("NumberValue")) and received.Value) or 0
+        if donated and (donated:IsA("IntValue") or donated:IsA("NumberValue")) then
+            profileData.stats.donated = donated.Value
+        else
+            profileData.stats.donated = 0
+        end
+        
+        if received and (received:IsA("IntValue") or received:IsA("NumberValue")) then
+            profileData.stats.received = received.Value
+        else
+            profileData.stats.received = 0
+        end
     else
         profileData.stats.donated = 0
         profileData.stats.received = 0
     end
     
     -- Collect Playtime (Minutes)
-    local minutes = player:FindFirstChild("Minutes")
-    if not minutes then
+    local minutes = nil
+    local directMinutes = player:FindFirstChild("Minutes")
+    if directMinutes then
+        minutes = directMinutes
+    else
         local leaderstats = player:FindFirstChild("leaderstats")
         if leaderstats then
             minutes = leaderstats:FindFirstChild("Minutes")
         end
     end
-    profileData.stats.playtime = (minutes and (minutes:IsA("IntValue") or minutes:IsA("NumberValue")) and minutes.Value) or 0
+    
+    if minutes and (minutes:IsA("IntValue") or minutes:IsA("NumberValue")) then
+        profileData.stats.playtime = minutes.Value
+    else
+        profileData.stats.playtime = 0
+    end
     
     -- Collect Credits
     local credits = player:FindFirstChild("Credits")
-    profileData.stats.credits = (credits and (credits:IsA("IntValue") or credits:IsA("NumberValue")) and credits.Value) or 0
+    if credits and (credits:IsA("IntValue") or credits:IsA("NumberValue")) then
+        profileData.stats.credits = credits.Value
+    else
+        profileData.stats.credits = 0
+    end
     
     -- Collect Account Age
     profileData.stats.accountAge = player.AccountAge
@@ -1672,7 +1692,10 @@ local function collectPlayerProfileData(player, playersInSessionList)
     if settings then
         local function getSettingValue(name)
             local setting = settings[name] or settings:FindFirstChild(name)
-            return (setting and setting:IsA("BoolValue") and setting.Value) or nil
+            if setting and setting:IsA("BoolValue") then
+                return setting.Value
+            end
+            return nil
         end
         
         profileData.settings.auras = getSettingValue("Auras")
@@ -1706,55 +1729,37 @@ local function collectPlayerProfileData(player, playersInSessionList)
     -- Chat messages are loaded separately in loadPlayerProfile() and merged for display
     
     -- Initialize sessionInfo structure
-    profileData.sessionInfo = {
-        localPlayerPresent = true,
-        sessionStartTime = getCurrentTimestamp(),
-        playersInSession = playersInSessionList
-    }
-    if not playersInSessionList then
-        profileData.sessionInfo.playersInSession = {}
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p and p.Parent then
-                table.insert(profileData.sessionInfo.playersInSession, p.Name)
-            end
+    profileData.sessionInfo = {}
+    profileData.sessionInfo.localPlayerPresent = true
+    profileData.sessionInfo.sessionStartTime = getCurrentTimestamp()
+    profileData.sessionInfo.playersInSession = {}
+    
+    -- Populate playersInSession using existing loop variable pattern
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p and p.Parent then
+            table.insert(profileData.sessionInfo.playersInSession, p.Name)
         end
     end
     
-    -- Get last playtime from cache instead of reading file every time
+    -- Read previous profile entries for playtime comparison (reuse backpack variable, no new locals)
     profileData.stats.lastSeenPlaytime = 0
     profileData.stats.playtimeDifference = 0
     profileData.stats.playtimeWhileAway = 0
     
-    local playerName = player.Name
-    local cachedData = profileCache[playerName]
-    
-    if cachedData and cachedData.lastPlaytime then
-        -- Use cached data
-        profileData.stats.lastSeenPlaytime = cachedData.lastPlaytime
-        profileData.stats.playtimeDifference = profileData.stats.playtime - cachedData.lastPlaytime
-        profileData.stats.playtimeWhileAway = ((cachedData.lastEntry and cachedData.lastEntry.sessionInfo and cachedData.lastEntry.sessionInfo.localPlayerPresent) and 0 or profileData.stats.playtimeDifference)
-    elseif readfile and isfile then
-        -- Cache miss: read file only if cache is empty
-        local profileFile = PROFILE_BASE_FOLDER .. "/" .. playerName .. "/profile.json"
-        if isfile(profileFile) then
-            local success, fileContent = pcall(readfile, profileFile)
-            if success and fileContent and fileContent ~= "" then
-                local decodeSuccess, decoded = pcall(HttpService.JSONDecode, HttpService, fileContent)
-                if decodeSuccess and decoded and type(decoded) == "table" and #decoded > 0 then
-                    local lastEntry = decoded[#decoded]
-                    profileData.stats.lastSeenPlaytime = (lastEntry.stats and lastEntry.stats.playtime) or 0
+    if readfile and isfile and pcall(function()
+        if isfile(PROFILE_BASE_FOLDER .. "/" .. player.Name .. "/profile.json") then
+            backpack = readfile(PROFILE_BASE_FOLDER .. "/" .. player.Name .. "/profile.json")
+            if backpack and backpack ~= "" then
+                if pcall(function()
+                    backpack = HttpService:JSONDecode(backpack)
+                end) and backpack and type(backpack) == "table" and #backpack > 0 then
+                    profileData.stats.lastSeenPlaytime = (backpack[#backpack].stats and backpack[#backpack].stats.playtime) or 0
                     profileData.stats.playtimeDifference = profileData.stats.playtime - profileData.stats.lastSeenPlaytime
-                    profileData.stats.playtimeWhileAway = ((lastEntry.sessionInfo and lastEntry.sessionInfo.localPlayerPresent) and 0 or profileData.stats.playtimeDifference)
-                    
-                    -- Update cache for future use
-                    profileCache[playerName] = {
-                        lastPlaytime = profileData.stats.lastSeenPlaytime,
-                        lastEntry = lastEntry,
-                        parsedData = decoded
-                    }
+                    profileData.stats.playtimeWhileAway = ((backpack[#backpack].sessionInfo and backpack[#backpack].sessionInfo.localPlayerPresent) and 0 or profileData.stats.playtimeDifference)
                 end
             end
         end
+    end) then
     end
     
     return profileData
@@ -1775,9 +1780,14 @@ local function savePlayerChatMessages(playerName, messages)
     -- Read existing messages if file exists
     local existingMessages = {}
     if isfile(messagesFile) then
-        local success, fileContent = pcall(readfile, messagesFile)
+        local success, fileContent = pcall(function()
+            return readfile(messagesFile)
+        end)
+        
         if success and fileContent and fileContent ~= "" then
-            local decodeSuccess, decoded = pcall(HttpService.JSONDecode, HttpService, fileContent)
+            local decodeSuccess, decoded = pcall(function()
+                return HttpService:JSONDecode(fileContent)
+            end)
             if decodeSuccess and decoded and type(decoded) == "table" then
                 existingMessages = decoded
             end
@@ -1800,9 +1810,24 @@ local function savePlayerChatMessages(playerName, messages)
         end
     end
     
-    -- Encode and save (use compact JSON, no pretty printing for performance)
-    local success, jsonString = pcall(HttpService.JSONEncode, HttpService, existingMessages)
-    return (success and jsonString and pcall(writefile, messagesFile, jsonString)) or false
+    -- Encode and save
+    local success, jsonString = pcall(function()
+        return HttpService:JSONEncode(existingMessages)
+    end)
+    
+    if not success or not jsonString then
+        return false
+    end
+    
+    -- Pretty-print JSON for readability
+    local formattedJSON = prettyPrintJSON(jsonString)
+    
+    -- Save to file
+    local writeSuccess, writeError = pcall(function()
+        writefile(messagesFile, formattedJSON)
+    end)
+    
+    return writeSuccess
 end
 
 -- Function to save player profile to workspace folder (without chat messages)
@@ -1836,25 +1861,19 @@ local function savePlayerProfile(player, profileData)
     -- Use folder path: Players/PlayerName/profile.json
     local profileFile = PROFILE_BASE_FOLDER .. "/" .. playerName .. "/profile.json"
     
-    -- Read existing profile from cache if available, otherwise read from file
-    local cachedData = profileCache[playerName]
-    local existingEntries = (cachedData and cachedData.parsedData) or {}
-    
-    if not (cachedData and cachedData.parsedData) and isfile(profileFile) then
-        -- Cache miss: read file only if cache is empty
-        local success, fileContent = pcall(readfile, profileFile)
+    -- Read existing profile if it exists
+    local existingEntries = {}
+    if isfile(profileFile) then
+        local success, fileContent = pcall(function()
+            return readfile(profileFile)
+        end)
+        
         if success and fileContent and fileContent ~= "" then
-            local decodeSuccess, decoded = pcall(HttpService.JSONDecode, HttpService, fileContent)
+            local decodeSuccess, decoded = pcall(function()
+                return HttpService:JSONDecode(fileContent)
+            end)
             if decodeSuccess and decoded and type(decoded) == "table" then
                 existingEntries = decoded
-                -- Update cache with parsed data
-                cachedData = {}
-                cachedData.parsedData = decoded
-                if #decoded > 0 then
-                    cachedData.lastEntry = decoded[#decoded]
-                    cachedData.lastPlaytime = (decoded[#decoded].stats and decoded[#decoded].stats.playtime) or 0
-                end
-                profileCache[playerName] = cachedData
             end
         end
     end
@@ -1862,27 +1881,33 @@ local function savePlayerProfile(player, profileData)
     -- Append new entry (without chat messages)
     table.insert(existingEntries, profileDataWithoutChat)
     
-    -- Encode and save (use compact JSON, no pretty printing for performance)
-    local success, jsonString = pcall(HttpService.JSONEncode, HttpService, existingEntries)
+    -- Encode and save
+    local success, jsonString = pcall(function()
+        return HttpService:JSONEncode(existingEntries)
+    end)
     
     if not success or not jsonString then
         warn("TipStatsGUI: Failed to encode profile data for player: " .. playerName)
         return false
     end
     
+    -- Pretty-print JSON for readability
+    local formattedJSON = prettyPrintJSON(jsonString)
+    
     -- Save to file (silent to reduce console spam)
-    local writeSuccess, writeError = pcall(writefile, profileFile, jsonString)
+    local writeSuccess, writeError = pcall(function()
+        writefile(profileFile, formattedJSON)
+    end)
     
     if writeSuccess then
-        -- Update cache with new entry
-        if not cachedData then
-            cachedData = {}
+        -- Verify file was created
+        task.wait(0.1)
+        if isfile(profileFile) then
+            return true
+        else
+            warn("TipStatsGUI: [Profile] Write reported success but file not found: " .. profileFile)
+            return false
         end
-        cachedData.parsedData = existingEntries
-        cachedData.lastEntry = profileDataWithoutChat
-        cachedData.lastPlaytime = (profileDataWithoutChat.stats and profileDataWithoutChat.stats.playtime) or 0
-        profileCache[playerName] = cachedData
-        return true
     else
         warn("TipStatsGUI: [Profile] Failed to save profile for: " .. playerName .. " - " .. tostring(writeError))
         return false
@@ -2014,50 +2039,48 @@ local function logPlayerLeaving(player)
     local playerName = player.Name
     local profileFile = PROFILE_BASE_FOLDER .. "/" .. playerName .. "/profile.json"
     
-    -- Read existing profile from cache if available, otherwise read from file
-    local cachedData = profileCache[playerName]
-    local existingEntries = (cachedData and cachedData.parsedData) or {}
-    
-    if not (cachedData and cachedData.parsedData) and isfile(profileFile) then
-        -- Cache miss: read file only if cache is empty
-        local success, fileContent = pcall(readfile, profileFile)
+    -- Read existing profile
+    local existingEntries = {}
+    if isfile(profileFile) then
+        local success, fileContent = pcall(function()
+            return readfile(profileFile)
+        end)
+        
         if success and fileContent and fileContent ~= "" then
-            local decodeSuccess, decoded = pcall(HttpService.JSONDecode, HttpService, fileContent)
+            local decodeSuccess, decoded = pcall(function()
+                return HttpService:JSONDecode(fileContent)
+            end)
             if decodeSuccess and decoded and type(decoded) == "table" then
                 existingEntries = decoded
-                -- Update cache with parsed data
-                cachedData = {}
-                cachedData.parsedData = decoded
-                if #decoded > 0 then
-                    cachedData.lastEntry = decoded[#decoded]
-                    cachedData.lastPlaytime = (decoded[#decoded].stats and decoded[#decoded].stats.playtime) or 0
-                end
-                profileCache[playerName] = cachedData
             end
         end
     end
     
     -- Add "player left" entry
-    table.insert(existingEntries, {
+    local leaveEntry = {
         timestamp = getCurrentTimestamp(),
         event = "player_left",
         userId = player.UserId,
         displayName = player.DisplayName or player.Name,
         username = player.Name
-    })
+    }
     
-    -- Save updated profile (use compact JSON, no pretty printing for performance)
-    local success, jsonString = pcall(HttpService.JSONEncode, HttpService, existingEntries)
+    table.insert(existingEntries, leaveEntry)
     
-    if success and jsonString and pcall(writefile, profileFile, jsonString) then
-        -- Update cache with new entry
-        if not cachedData then
-            cachedData = {}
+    -- Save updated profile
+    local success, jsonString = pcall(function()
+        return HttpService:JSONEncode(existingEntries)
+    end)
+    
+    if success and jsonString then
+        -- Pretty-print JSON for readability
+        local formattedJSON = prettyPrintJSON(jsonString)
+        local writeSuccess = pcall(function()
+            writefile(profileFile, formattedJSON)
+        end)
+        if writeSuccess then
+            -- Silent - no console spam
         end
-        cachedData.parsedData = existingEntries
-        cachedData.lastEntry = existingEntries[#existingEntries]
-        profileCache[playerName] = cachedData
-        -- Silent - no console spam
     end
 end
 
@@ -2071,19 +2094,10 @@ local function updateAllPlayerProfiles()
         return
     end
     
-    -- Collect player list once to avoid redundant iteration
-    local playersList = Players:GetPlayers()
-    local playersInSessionList = {}
-    for _, p in ipairs(playersList) do
-        if p and p.Parent then
-            table.insert(playersInSessionList, p.Name)
-        end
-    end
-    
     -- Save players sequentially with delay to prevent lag
-    for _, player in ipairs(playersList) do
+    for _, player in ipairs(Players:GetPlayers()) do
         if player and player.Parent then
-            local profileData = collectPlayerProfileData(player, playersInSessionList)
+            local profileData = collectPlayerProfileData(player)
             if profileData then
                 savePlayerProfile(player, profileData)
                 task.wait(0.75) -- Delay after each save to prevent lag
@@ -2096,9 +2110,6 @@ end
 local profileUpdateConnection = nil
 local profilePeriodicUpdate = nil
 
--- Profile cache system for performance optimization
-local profileCache = {} -- Cache structure: profileCache[playerName] = { lastPlaytime = number, lastEntry = table, parsedData = table }
-
 local function startProfileUpdateSystem()
     if not settingsState.buildPlayerProfile then
         return
@@ -2106,19 +2117,10 @@ local function startProfileUpdateSystem()
     
     -- Take snapshot of all existing players immediately when enabled
     task.spawn(function()
-        -- Collect player list once to avoid redundant iteration
-        local playersList = Players:GetPlayers()
-        local playersInSessionList = {}
-        for _, p in ipairs(playersList) do
-            if p and p.Parent then
-                table.insert(playersInSessionList, p.Name)
-            end
-        end
-        
         -- Create profiles sequentially for all players in lobby with delay to prevent lag
-        for _, player in ipairs(playersList) do
+        for _, player in ipairs(Players:GetPlayers()) do
             if player and player.Parent then
-                local profileData = collectPlayerProfileData(player, playersInSessionList)
+                local profileData = collectPlayerProfileData(player)
                 if profileData then
                     savePlayerProfile(player, profileData)
                     task.wait(0.75) -- Delay after each save to prevent lag
@@ -2135,14 +2137,7 @@ local function startProfileUpdateSystem()
                 task.spawn(function()
                     task.wait(3)
                     if player and player.Parent then
-                        -- Collect current player list for session info
-                        local playersInSessionList = {}
-                        for _, p in ipairs(Players:GetPlayers()) do
-                            if p and p.Parent then
-                                table.insert(playersInSessionList, p.Name)
-                            end
-                        end
-                        local profileData = collectPlayerProfileData(player, playersInSessionList)
+                        local profileData = collectPlayerProfileData(player)
                         if profileData then
                             savePlayerProfile(player, profileData)
                         end
@@ -2192,18 +2187,9 @@ task.spawn(function()
         startProfileUpdateSystem()
         -- Also create profiles sequentially for all current players with delay to prevent lag
         task.spawn(function()
-            -- Collect player list once to avoid redundant iteration
-            local playersList = Players:GetPlayers()
-            local playersInSessionList = {}
-            for _, p in ipairs(playersList) do
-                if p and p.Parent then
-                    table.insert(playersInSessionList, p.Name)
-                end
-            end
-            
-            for _, player in ipairs(playersList) do
+            for _, player in ipairs(Players:GetPlayers()) do
                 if player and player.Parent then
-                    local profileData = collectPlayerProfileData(player, playersInSessionList)
+                    local profileData = collectPlayerProfileData(player)
                     if profileData then
                         savePlayerProfile(player, profileData)
                         task.wait(0.75) -- Delay after each save to prevent lag
@@ -7251,6 +7237,79 @@ donationNotifications.createLeaderboardNotification = function()
     end)
 end
 
+donationNotifications.createTestNotification = function()
+    if not screenGui or not screenGui.Parent then
+        return
+    end
+    donationNotifications.leaderboardActiveCount = 0
+    donationNotifications.leaderboardTemp = next(donationNotifications.leaderboardActive)
+    while donationNotifications.leaderboardTemp do
+        donationNotifications.leaderboardActiveCount = donationNotifications.leaderboardActiveCount + 1
+        donationNotifications.leaderboardTemp = next(donationNotifications.leaderboardActive, donationNotifications.leaderboardTemp)
+    end
+    donationNotifications.leaderboardNotificationFrame = Instance.new("Frame")
+    donationNotifications.leaderboardNotificationFrame.Name = "LeaderboardNotification_TEST"
+    donationNotifications.leaderboardNotificationFrame.Size = UDim2.new(0, 350, 0, 60)
+    donationNotifications.leaderboardNotificationFrame.AnchorPoint = Vector2.new(0.5, 1)
+    donationNotifications.leaderboardNotificationFrame.Position = UDim2.new(0.5, 0, 1, -120 - (donationNotifications.leaderboardActiveCount * 70))
+    donationNotifications.leaderboardNotificationFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    donationNotifications.leaderboardNotificationFrame.BackgroundTransparency = 0
+    donationNotifications.leaderboardNotificationFrame.BorderSizePixel = 0
+    donationNotifications.leaderboardNotificationFrame.Visible = true
+    donationNotifications.leaderboardNotificationFrame.Parent = screenGui
+    donationNotifications.leaderboardNotificationFrame.ZIndex = 51
+    donationNotifications.leaderboardNotificationCorner = Instance.new("UICorner")
+    donationNotifications.leaderboardNotificationCorner.CornerRadius = UDim.new(0, 10)
+    donationNotifications.leaderboardNotificationCorner.Parent = donationNotifications.leaderboardNotificationFrame
+    donationNotifications.leaderboardNotificationStroke = Instance.new("UIStroke")
+    donationNotifications.leaderboardNotificationStroke.Color = Color3.fromRGB(60, 60, 60)
+    donationNotifications.leaderboardNotificationStroke.Thickness = 1
+    donationNotifications.leaderboardNotificationStroke.Transparency = 0.3
+    donationNotifications.leaderboardNotificationStroke.Parent = donationNotifications.leaderboardNotificationFrame
+    donationNotifications.leaderboardNotificationLabel = Instance.new("TextLabel")
+    donationNotifications.leaderboardNotificationLabel.Name = "NotificationText"
+    donationNotifications.leaderboardNotificationLabel.Size = UDim2.new(1, -20, 1, 0)
+    donationNotifications.leaderboardNotificationLabel.Position = UDim2.new(0, 15, 0, 0)
+    donationNotifications.leaderboardNotificationLabel.BackgroundTransparency = 1
+    donationNotifications.leaderboardNotificationLabel.Text = "[TEST] Notification system is working!"
+    donationNotifications.leaderboardNotificationLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    donationNotifications.leaderboardNotificationLabel.TextSize = 16
+    donationNotifications.leaderboardNotificationLabel.Font = Enum.Font.GothamBold
+    donationNotifications.leaderboardNotificationLabel.TextXAlignment = Enum.TextXAlignment.Left
+    donationNotifications.leaderboardNotificationLabel.TextWrapped = true
+    donationNotifications.leaderboardNotificationLabel.Parent = donationNotifications.leaderboardNotificationFrame
+    donationNotifications.leaderboardNotificationFrame.Size = UDim2.new(0, 0, 0, 60)
+    donationNotifications.leaderboardSizeTween = TweenService:Create(
+        donationNotifications.leaderboardNotificationFrame,
+        TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        {Size = UDim2.new(0, 350, 0, 60)}
+    )
+    donationNotifications.leaderboardSizeTween:Play()
+    task.spawn(function()
+        task.wait(8)
+        if donationNotifications.leaderboardNotificationFrame.Parent then
+            donationNotifications.leaderboardFadeTween = TweenService:Create(
+                donationNotifications.leaderboardNotificationFrame,
+                TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+                {BackgroundTransparency = 1, Size = UDim2.new(0, 0, 0, 60)}
+            )
+            if donationNotifications.leaderboardNotificationLabel then
+                donationNotifications.leaderboardTextFade = TweenService:Create(
+                    donationNotifications.leaderboardNotificationLabel,
+                    TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+                    {TextTransparency = 1}
+                )
+                donationNotifications.leaderboardTextFade:Play()
+            end
+            donationNotifications.leaderboardFadeTween:Play()
+            donationNotifications.leaderboardFadeTween.Completed:Wait()
+            if donationNotifications.leaderboardNotificationFrame.Parent then
+                donationNotifications.leaderboardNotificationFrame:Destroy()
+            end
+        end
+    end)
+end
+
 donationNotifications.processLeaderboardMatches = function()
     donationNotifications.leaderboardCheckSuccess, donationNotifications.leaderboardCheckResult = donationNotifications.checkLeaderboardForPlayers()
     if donationNotifications.leaderboardCheckSuccess and donationNotifications.leaderboardCheckResult then
@@ -7281,6 +7340,11 @@ donationNotifications.startLeaderboardChecking = function()
             donationNotifications.processLeaderboardMatches()
             donationNotifications.processMinutesMatches()
         end
+    end))
+    trackConnection(Players.PlayerAdded:Connect(function()
+        task.wait(1)
+        donationNotifications.processLeaderboardMatches()
+        donationNotifications.processMinutesMatches()
     end))
 end
 
@@ -7504,6 +7568,14 @@ donationNotifications.processMinutesMatches = function()
 end
 
 task.spawn(donationNotifications.startLeaderboardChecking)
+
+-- Test notification on script startup to verify notification system works
+task.spawn(function()
+    task.wait(3)
+    if screenGui and screenGui.Parent then
+        donationNotifications.createTestNotification()
+    end
+end)
 
 local function evaluateHoverTarget()
     if not scriptRunning then
